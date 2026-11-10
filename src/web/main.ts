@@ -70,6 +70,15 @@ export class RcdPlayer {
     private mContentOffsetY = 0;
 
     private isPaused = false;
+    /**
+     * Frames still to paint after a host change (repaint()), even if the document says it is
+     * idle. A change reaches what depends on it over several frames: a component paints its
+     * own operations before its children, so a value a child computes (a slider's TextFromFloat)
+     * reaches a reader in its parent (the TextMerge of the label beside it) a frame later. One
+     * frame left that label stale: the plane moved, the time left did not.
+     */
+    private settleFrames = 0;
+    private static readonly SETTLE_FRAMES = 4;
 
     // Draws the custom components — embedded documents, videos — for every document this
     // player shows. It outlives the documents, so an embed marked `persist` carries across
@@ -401,8 +410,12 @@ export class RcdPlayer {
 
         if (this.isPaused) return;
 
-        // Schedule next frame if needed
-        const repaintDelay = this.document.needsRepaint();
+        // Schedule next frame if needed (and, after a host change, until it has settled)
+        let repaintDelay = this.document.needsRepaint();
+        if (this.settleFrames > 0) {
+            this.settleFrames--;
+            if (repaintDelay < 0 || repaintDelay > 1) repaintDelay = 1;
+        }
         if (repaintDelay >= 0) {
             if (repaintDelay <= 1) {
                 this.animationFrameId = requestAnimationFrame(this.renderFrame);
@@ -444,6 +457,7 @@ export class RcdPlayer {
     }
 
     repaint(): void {
+        this.settleFrames = RcdPlayer.SETTLE_FRAMES;
         if (this.animationFrameId !== null) {
             cancelAnimationFrame(this.animationFrameId);
             this.animationFrameId = null;

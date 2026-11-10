@@ -203,8 +203,15 @@ export class WebRemoteContext extends RemoteContext {
         // A host-set string wins over the document's own DATA_TEXT, which the data pass
         // reloads every frame — as RemoteComposeState.updateData does for other data.
         if (this.mRemoteComposeState.isDataOverridden(id)) return;
+        // A text that changes tells the operations that read it (a TextMerge, a TextLookup,
+        // a text a component lays out), as the reference's loadText does (update, not cache,
+        // for an id it already holds). Cached silently, a merge of a TextFromFloat kept its
+        // first value: a host value set after the first frame moved the drawing but not the
+        // text derived from it.
+        const previous = this.mRemoteComposeState.getFromId(id);
         this.mRemoteComposeState.cacheDataWithId(id, text);
         this.canvasPaintContext.loadText(id, text);
+        if (previous !== undefined && previous !== null && previous !== text) this.mRemoteComposeState.markVariableDirty(id);
     }
 
     getText(id: number): string | null {
