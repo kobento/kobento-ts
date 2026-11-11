@@ -12,25 +12,49 @@ import { PaintOperation } from '../../../PaintOperation';
 
 export abstract class LayoutManager extends LayoutComponent {
     protected mCachedWrapSize = new Size();
-    protected mLastMeasurePass: MeasurePass | null = null;
-    protected mLastMinW = -1;
-    protected mLastMaxW = -1;
-    protected mLastMinH = -1;
-    protected mLastMaxH = -1;
-
+    /**
+     * Java LayoutManager.measure, with its measure cache (CoreDocument OPTIMIZATION_MEASURE_CACHE
+     * and OPTIMIZATION_CONSTRAINTS_CACHE, both on by default): a component that does not need
+     * measuring, reads no variables in its own list (hasDynamicComputes), has no descendant
+     * with a computed layout, and is asked again with the constraints it was measured with in
+     * this pass (or with its measured size as the fixed size on one axis) keeps its result.
+     * Without it a flow measures each child four times per pass and nested flows multiply.
+     */
     measure(context: PaintContext, minWidth: number, maxWidth: number,
             minHeight: number, maxHeight: number, measure: MeasurePass): void {
-        if (this.mLastMeasurePass === measure &&
-            this.mLastMinW === minWidth && this.mLastMaxW === maxWidth &&
-            this.mLastMinH === minHeight && this.mLastMaxH === maxHeight &&
-            !this.mNeedsMeasure) {
+        const m = measure.get(this);
+        const doc = context.getContext()?.getDocument?.() ?? null;
+        // (Java also requires !mNeedsMeasure, which keeps a first layout, where every component
+        // needs measuring until the pass ends, uncached. A cached entry here exists only once the
+        // component was measured in this pass, which is the measure it needed; repeats of it are
+        // what the cache is for, so it applies to the first layout too, as in the C++ engine.)
+        if (doc && doc.isConstraintsCacheEnabled() && doc.isMeasureCacheEnabled()
+            && !this.hasDynamicComputes() && !this.hasChildWithComputedLayout()
+            && !this.hasDirtyModifier()
+            && m.hasCachedConstraints(minWidth, maxWidth, minHeight, maxHeight)) {
             return;
         }
-        this.mLastMeasurePass = measure;
-        this.mLastMinW = minWidth;
-        this.mLastMaxW = maxWidth;
-        this.mLastMinH = minHeight;
-        this.mLastMaxH = maxHeight;
+        this.measureUncached(context, minWidth, maxWidth, minHeight, maxHeight, measure);
+        m.setCachedConstraints(minWidth, maxWidth, minHeight, maxHeight);
+    }
+
+    /**
+     * A modifier of this component waiting to be re-evaluated (its variable changed): the
+     * measure would come out differently. Java re-evaluates them before the layout pass;
+     * here a size bound to an expression its parent re-evaluates in its own measure
+     * (componentWidth() of the parent) is picked up during the pass, by the measure that
+     * finds it dirty, so a cached result from earlier in the pass would be stale.
+     */
+    private hasDirtyModifier(): boolean {
+        for (const mod of [this.getWidthModifier(), this.getHeightModifier(), this.getWidthInModifier(), this.getHeightInModifier()]) {
+            if (mod && (mod as any).isDirty?.()) return true;
+        }
+        for (const mod of this.mComponentModifiers) if ((mod as any).isDirty?.()) return true;
+        return false;
+    }
+
+    private measureUncached(context: PaintContext, minWidth: number, maxWidth: number,
+            minHeight: number, maxHeight: number, measure: MeasurePass): void {
 
         // Padding resolves in the modifiers' updateVariables (variables, DP scaling); pick up
         // the resolved values, as Java's computeModifierDefinedWidth does via updatePadding.

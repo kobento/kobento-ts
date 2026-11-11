@@ -90,6 +90,8 @@ export class LayoutComponent extends Component {
         this.mChildrenComponents = [];
         this.mComponentModifiers = [];
         this.mContentOps = [];
+        this.mComponentDataOps = [];
+        this.mDynamicMemo = null;
         this.mPaddingLeft = 0;
         this.mPaddingRight = 0;
         this.mPaddingTop = 0;
@@ -234,6 +236,9 @@ export class LayoutComponent extends Component {
                 op.inflate();
             } else {
                 // Other operations go into component modifiers or content
+                // (and, being at the component's level, not in its content, they are what
+                // Java keeps in the component's own list: hasDynamicComputes reads them)
+                this.mComponentDataOps.push(op);
                 if (this.mDrawContentOperations !== null) {
                     this.mDrawContentOperations.push(op);
                 } else {
@@ -313,6 +318,29 @@ export class LayoutComponent extends Component {
 
     override hasComputedLayout(): boolean {
         return this.mComputedLayoutModifiers !== null;
+    }
+
+    /** The operations at the component's own level (not modifiers, not content): Java's ComponentData in mList. */
+    protected mComponentDataOps: Operation[] = [];
+    private mDynamicMemo: boolean | null = null;
+
+    override hasDynamicComputes(): boolean {
+        if (this.mDynamicMemo !== null) return this.mDynamicMemo;
+        let dynamic = false;
+        for (const op of this.mComponentDataOps) {
+            if (op instanceof Component) continue;
+            if (op instanceof ComponentValue) continue;   // not VariableSupport in Java
+            if (typeof (op as any).updateVariables === 'function') { dynamic = true; break; }
+        }
+        if (!dynamic) for (const c of this.mChildrenComponents) {
+            if (c.isVariableSupportComponent()) { dynamic = true; break; }
+        }
+        this.mDynamicMemo = dynamic;
+        return dynamic;
+    }
+
+    protected override childComponentsForCache(): Component[] {
+        return this.mChildrenComponents;
     }
 
     override applyComputedLayout(type: number, context: PaintContext,

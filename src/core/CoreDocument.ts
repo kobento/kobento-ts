@@ -71,6 +71,22 @@ export interface ActionCallback {
 const FONT_SCALE = 1;
 
 export class CoreDocument implements ExpansionDocument {
+    // Layout optimizations (Java CoreDocument.OPTIMIZATION_*): a bit mask, all on by default;
+    // a document can narrow it with the header's FEATURE_OPTIMIZATION_LEVEL.
+    static readonly OPTIMIZATION_NONE = 0;
+    static readonly OPTIMIZATION_MEASURE_CACHE = 1;
+    static readonly OPTIMIZATION_LAYOUT_BOUNDARIES = 2;
+    static readonly OPTIMIZATION_FLAT_MEASURE_PASS = 4;
+    static readonly OPTIMIZATION_CONSTRAINTS_CACHE = 8;
+    static readonly OPTIMIZATION_ALL = 1 | 2 | 4 | 8;
+    private mOptimizationLevel = CoreDocument.OPTIMIZATION_ALL;
+    setOptimizationLevel(mask: number): void { this.mOptimizationLevel = mask; }
+    getOptimizationLevel(): number { return this.mOptimizationLevel; }
+    isMeasureCacheEnabled(): boolean { return (this.mOptimizationLevel & CoreDocument.OPTIMIZATION_MEASURE_CACHE) !== 0; }
+    isConstraintsCacheEnabled(): boolean { return (this.mOptimizationLevel & CoreDocument.OPTIMIZATION_CONSTRAINTS_CACHE) !== 0; }
+    isRelayoutBoundaryEnabled(): boolean { return (this.mOptimizationLevel & CoreDocument.OPTIMIZATION_LAYOUT_BOUNDARIES) !== 0; }
+    isFlatMeasurePassEnabled(): boolean { return (this.mOptimizationLevel & CoreDocument.OPTIMIZATION_FLAT_MEASURE_PASS) !== 0; }
+
     static readonly MAJOR_VERSION = 1;
     static readonly MINOR_VERSION = 1;
     static readonly PATCH_VERSION = 0;
@@ -240,7 +256,16 @@ export class CoreDocument implements ExpansionDocument {
 
     invalidateMeasure(): void {
         if (this.mRootLayoutComponent) this.mRootLayoutComponent.invalidateMeasure();
+        this.mRelayoutRequested = true;
     }
+
+    /**
+     * The document was invalidated (a size bound to a value that changed, a resize) since the
+     * layout of the current frame started: paint asks for one more frame to lay it out.
+     * Component-level invalidations (a StateLayout setting its panes' visibility while it
+     * measures, a text re-measuring) do not count: they settle within the pass.
+     */
+    private mRelayoutRequested = false;
 
     getOperations(): Operation[] { return this.mOperations; }
     getOpsPerFrame(): number { return this.mLastOpCount; }
@@ -536,6 +561,10 @@ export class CoreDocument implements ExpansionDocument {
     private seedTouchVersion(context: RemoteContext): void {
         const declared = this.getProperty(Header.FEATURE_TOUCH_VERSION) as number | null;
         context.setTouchVersion(typeof declared === 'number' ? declared : 1);
+        // (Here too: the header's optimization level, read once the header is in, as Java's
+        // initFromBuffer does; absent means all.)
+        const opt = this.getProperty(Header.FEATURE_OPTIMIZATION_LEVEL) as number | null;
+        if (typeof opt === 'number' && opt !== -1) this.setOptimizationLevel(opt);
     }
 
     private seedDensityBehavior(context: RemoteContext): void {
@@ -657,7 +686,8 @@ export class CoreDocument implements ExpansionDocument {
             }
         }
 
-        // Run layout pass if needed
+        // Run layout pass if needed (a document invalidation from here on asks for one more frame)
+        this.mRelayoutRequested = false;
         if (this.mRootLayoutComponent && this.mRootLayoutComponent.needsMeasure()) {
             this.mRootLayoutComponent.layoutTree(context);
         }
@@ -765,6 +795,12 @@ export class CoreDocument implements ExpansionDocument {
         // Check if we need repaint
         const pc2 = context.getPaintContext();
         if ((pc2 && pc2.doesNeedsRepaint()) || (this.mRootLayoutComponent && (this.mRootLayoutComponent.needsRepaint() || this.mRootLayoutComponent.needsBoundsAnimation()))) {
+            this.mNeedsRepaintFlag = 1;
+        } else if (this.mRelayoutRequested && this.mRootLayoutComponent && this.mRootLayoutComponent.needsMeasure()) {
+            // A layout input changed during this frame's layout (a size bound to a value the
+            // pass itself updated invalidates the document, as Java's invalidateMeasure does
+            // with its needsRepaint): one more frame lays it out again. With the measure
+            // cache, the repeated measures within a pass no longer re-read such values.
             this.mNeedsRepaintFlag = 1;
         } else {
             this.mNeedsRepaintFlag = this.mRemoteComposeState.getOpsToUpdate(context, this.mClock.millis());

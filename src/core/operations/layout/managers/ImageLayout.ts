@@ -15,6 +15,8 @@ import { isNaNBits, idFromBits, intBitsToFloat } from '../../Utils';
 import { BitmapData } from '../../DataOperations';
 
 export class ImageLayout extends LayoutManager implements VariableSupport {
+    /** (Java: VariableSupport; see Component.isVariableSupportComponent.) */
+    override isVariableSupportComponent(): boolean { return true; }
     static readonly OP_CODE = 234;
 
     private mBitmapId: number;

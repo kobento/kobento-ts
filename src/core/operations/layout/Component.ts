@@ -531,6 +531,41 @@ export class Component extends PaintOperation implements Container {
     }
 
     hasComputedLayout(): boolean { return false; }
+
+    /**
+     * Java VariableSupport, for the measure cache: CoreText, TextLayout, ImageLayout and
+     * Custom implement it, so a container with one of them as a direct child is measured
+     * every time (hasDynamicComputes).
+     */
+    isVariableSupportComponent(): boolean { return false; }
+
+    /**
+     * Java Component.hasDynamicComputes: whether anything in the component's own operation
+     * list reads variables, in which case the measure cache does not apply to it. Java's list
+     * after inflation holds the component-level data operations (ComponentData), the
+     * modifiers (as one object, not VariableSupport) and the child components.
+     */
+    hasDynamicComputes(): boolean { return false; }
+
+    /** Java Component.hasChildWithComputedLayout: any descendant with a computed layout. */
+    private mChildComputedMemo: boolean | null = null;
+    hasChildWithComputedLayout(): boolean {
+        // (The tree and its modifiers are fixed once inflated: computed once.)
+        if (this.mChildComputedMemo !== null) return this.mChildComputedMemo;
+        let found = false;
+        for (const op of this.childComponentsForCache()) {
+            if (op.hasComputedLayout() || op.hasChildWithComputedLayout()) { found = true; break; }
+        }
+        this.mChildComputedMemo = found;
+        return found;
+    }
+
+    /** The child components, as Java's mList holds them after inflation. */
+    protected childComponentsForCache(): Component[] {
+        const out: Component[] = [];
+        for (const op of this.getList()) if (op instanceof Component) out.push(op);
+        return out;
+    }
     applyComputedLayout(_type: number, _context: PaintContext,
                         _m: any, _parent: any): boolean { return false; }
 

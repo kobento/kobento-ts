@@ -21,6 +21,8 @@ interface CustomProperty {
 }
 
 export class Custom extends LayoutManager {
+    /** (Java: VariableSupport; see Component.isVariableSupportComponent.) */
+    override isVariableSupportComponent(): boolean { return true; }
     static readonly OP_CODE = 93;
 
     protected mConfigId: number;

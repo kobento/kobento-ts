@@ -32,6 +32,8 @@ export class Header extends Operation {
     static readonly FEATURE_MEASURE_VERSION: number = 17;
     static readonly FEATURE_TOUCH_VERSION: number = 18;
     static readonly FEATURE_PRIORITY_FIX: number = 23;
+    /** Which layout optimizations a document allows (CoreDocument.OPTIMIZATION_*; default all). */
+    static readonly FEATURE_OPTIMIZATION_LEVEL: number = 28;
 
     // Data types
     private static readonly DATA_TYPE_INT = 0;

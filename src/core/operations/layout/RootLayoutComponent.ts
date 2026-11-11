@@ -39,7 +39,19 @@ export class RootLayoutComponent extends Component {
         }
     }
 
+    /**
+     * The root itself needs measuring; the components under it keep their state, as Java's
+     * (Component.invalidateMeasure walks up, never down). Marking the whole tree here made
+     * every component "needs measure" through a resize's pass, which turned the measure
+     * cache off for all of them. A component whose content changed marks itself and its
+     * parents; the per-pass constraints check covers the rest.
+     */
     override invalidateMeasure(): void {
+        this.mNeedsMeasure = true;
+    }
+
+    /** Every component in the tree needs measuring (the first layout's state). */
+    invalidateMeasureAll(): void {
         this.mNeedsMeasure = true;
         this.invalidateMeasureChildren(this);
     }

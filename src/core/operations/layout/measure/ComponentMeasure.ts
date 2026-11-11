@@ -10,6 +10,41 @@ export class ComponentMeasure {
     mVisibility: number;
     private mAllowsAnimation = true;
 
+    // The constraints this component was last measured with in this pass (Java's measure
+    // cache): a measure asking again with the same ones, or with its own measured size as
+    // the fixed size on one axis, can keep the result.
+    private mMinWidth = -1;
+    private mMaxWidth = -1;
+    private mMinHeight = -1;
+    private mMaxHeight = -1;
+    private mHasCache = false;
+
+    setCachedConstraints(minWidth: number, maxWidth: number, minHeight: number, maxHeight: number): void {
+        this.mMinWidth = minWidth;
+        this.mMaxWidth = maxWidth;
+        this.mMinHeight = minHeight;
+        this.mMaxHeight = maxHeight;
+        this.mHasCache = true;
+    }
+
+    clearCache(): void { this.mHasCache = false; }
+
+    hasCachedConstraints(minWidth: number, maxWidth: number, minHeight: number, maxHeight: number): boolean {
+        if (!this.mHasCache) return false;
+        // 1. Exact match
+        if (this.mMinWidth === minWidth && this.mMaxWidth === maxWidth
+            && this.mMinHeight === minHeight && this.mMaxHeight === maxHeight) return true;
+        // 2. The vertical positioning pass: the same width constraints, the height fixed to
+        // the height measured last time.
+        if (this.mMinWidth === minWidth && this.mMaxWidth === maxWidth
+            && minHeight === this.mH && maxHeight === this.mH) return true;
+        // 3. The horizontal positioning pass: the same height constraints, the width fixed to
+        // the width measured last time.
+        if (this.mMinHeight === minHeight && this.mMaxHeight === maxHeight
+            && minWidth === this.mW && maxWidth === this.mW) return true;
+        return false;
+    }
+
     // Visibility constants — matches Java Component.Visibility encoding
     static readonly GONE = 0;
     static readonly VISIBLE = 1;
