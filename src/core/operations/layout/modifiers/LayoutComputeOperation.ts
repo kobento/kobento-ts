@@ -65,6 +65,17 @@ export class LayoutComputeOperation extends Operation implements Container, Vari
 
     markDirty(): void { /* nothing */ }
 
+    /**
+     * Java LayoutComputeOperation.evaluateInLayout: the document calls it before measuring, so
+     * a block whose expressions changed (a position following a variable, with nothing else
+     * changing) invalidates its component's measure and is laid out again. Without it only a
+     * change that invalidated the layout some other way -- a size -- moved the component.
+     */
+    evaluateInLayout(context: RemoteContext): boolean {
+        this.updateVariables(context);
+        return false;
+    }
+
     apply(_context: RemoteContext): void { /* nothing */ }
 
     applyToMeasure(context: PaintContext, m: ComponentMeasure, parent: ComponentMeasure): boolean {
