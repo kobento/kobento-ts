@@ -2259,8 +2259,9 @@ export class CanvasPaintContext extends PaintContext {
             this.ctx.globalAlpha = alpha;
         }
 
-        // Composite the offscreen layer onto the main canvas
-        this.ctx.drawImage(layerCanvas, 0, 0);
+        // Composite the offscreen layer onto the main canvas. A component laid out 0 wide or
+        // high (a narrow window) has an empty layer: drawImage throws on a 0-sized canvas.
+        if (layerCanvas.width > 0 && layerCanvas.height > 0) this.ctx.drawImage(layerCanvas, 0, 0);
 
         this.ctx.restore();
     }
