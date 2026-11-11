@@ -678,6 +678,14 @@ export class LayoutComponent extends Component {
         paintContext.matrixRestore();
     }
 
+    /**
+     * Whether a child of a scrolling component can show at all, to skip painting the rest (an
+     * optimisation of ours: the reference paints every child and lets the clip cut them).
+     * The clip is the component's whole box, and a padding after the scroll modifier belongs
+     * to the scrolled content (room at the end of a list, under a floating button), so the
+     * window counts the whole height, widened by the paddings on both sides: a row partly in
+     * view is painted and clipped. Too wide only paints a little more; too narrow drops rows.
+     */
     protected isChildVisibleInViewport(child: Component): boolean {
         const scrollMod = this.mScrollModifier;
         if (!scrollMod) return true;
@@ -690,20 +698,18 @@ export class LayoutComponent extends Component {
         if (childW <= 0 && childH <= 0) return true;
 
         if (scrollMod.isVertical()) {
-            const hostHeight = this.mHeight - this.mPaddingTop - this.mPaddingBottom;
-            if (hostHeight <= 0) return true;
+            if (this.mHeight <= 0) return true;
             const scrollY = scrollMod.getScrollY();
-            const viewportTop = -scrollY;
-            const viewportBottom = viewportTop + hostHeight;
+            const viewportTop = -scrollY - this.mPaddingTop - this.mPaddingBottom;
+            const viewportBottom = -scrollY + this.mHeight;
             if (childY + childH < viewportTop || childY > viewportBottom) {
                 return false;
             }
         } else {
-            const hostWidth = this.mWidth - this.mPaddingLeft - this.mPaddingRight;
-            if (hostWidth <= 0) return true;
+            if (this.mWidth <= 0) return true;
             const scrollX = scrollMod.getScrollX();
-            const viewportLeft = -scrollX;
-            const viewportRight = viewportLeft + hostWidth;
+            const viewportLeft = -scrollX - this.mPaddingLeft - this.mPaddingRight;
+            const viewportRight = -scrollX + this.mWidth;
             if (childX + childW < viewportLeft || childX > viewportRight) {
                 return false;
             }
