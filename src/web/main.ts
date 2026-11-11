@@ -78,6 +78,11 @@ export class RcdPlayer {
      * frame left that label stale: the plane moved, the time left did not.
      */
     private settleFrames = 0;
+    /**
+     * The document's size in device pixels when it is smaller than the canvas (setViewport),
+     * else null: the document then fills the canvas, as resize() makes it.
+     */
+    private viewport: { width: number; height: number } | null = null;
     private static readonly SETTLE_FRAMES = 4;
 
     // Draws the custom components — embedded documents, videos — for every document this
@@ -265,6 +270,7 @@ export class RcdPlayer {
         if (density > 0 && !Number.isNaN(density)) {
             this.density = density;
             this.remoteContext?.setDensity(density);
+            if (this.viewport) this.growCanvas(this.viewport.width, this.viewport.height);
             this.scheduleRepaint();
         }
     }
@@ -312,8 +318,8 @@ export class RcdPlayer {
         // dividing here would apply it a second time. Verified against the device: a 980px
         // viewport at density 2.625 reproduces the phone's flow segmentation exactly, while
         // 980/2.625 = 373 puts one card per row.
-        const docWidth = this.canvas.width;
-        const docHeight = this.canvas.height;
+        const docWidth = this.viewport?.width ?? this.canvas.width;
+        const docHeight = this.viewport?.height ?? this.canvas.height;
 
         // Override document dimensions to match canvas
         doc.setWidth(docWidth);
@@ -339,6 +345,7 @@ export class RcdPlayer {
         this.remoteContext.setCustomHost(this.customHost);
         this.remoteContext.mWidth = docWidth;
         this.remoteContext.mHeight = docHeight;
+        if (this.viewport) { this.paintContext.surfaceWidth = docWidth; this.paintContext.surfaceHeight = docHeight; }
         this.remoteContext.setDensity(density);
         // Reapply an armed sink so measurement covers this document from its first frame.
         if (this.measurementSink) this.remoteContext.setMeasurementSink(this.measurementSink);
@@ -468,6 +475,9 @@ export class RcdPlayer {
     }
 
     resize(newWidth: number, newHeight: number): void {
+        // The canvas is the document's size again (setViewport's spare room is given up).
+        this.viewport = null;
+        if (this.paintContext) { this.paintContext.surfaceWidth = 0; this.paintContext.surfaceHeight = 0; }
         this.canvas.width = newWidth;
         this.canvas.height = newHeight;
         const d = this.remoteContext?.getDensity() || this.density || 1;
@@ -492,6 +502,59 @@ export class RcdPlayer {
             this.document.invalidateMeasure();
         }
         this.repaint();
+    }
+
+    /**
+     * Lay the document out at width x height device pixels without resizing the canvas when
+     * it is already big enough: the document draws in the canvas's top-left corner, and the
+     * host shows that part (a wrapper of the document's CSS size with overflow hidden around
+     * a canvas at its full CSS size). Setting a canvas's width or height reallocates its
+     * backing store and clears it, so resize() on every step of a drag-resize reallocated on
+     * every step; here the canvas only grows, in steps of SURFACE_STEP device pixels (or to
+     * what reserveSurface asked for), and a smaller size reuses it.
+     */
+    setViewport(width: number, height: number): void {
+        const w = Math.max(1, Math.round(width)), h = Math.max(1, Math.round(height));
+        this.viewport = { width: w, height: h };
+        this.growCanvas(w, h);
+        if (this.paintContext) { this.paintContext.surfaceWidth = w; this.paintContext.surfaceHeight = h; }
+        if (this.remoteContext) { this.remoteContext.mWidth = w; this.remoteContext.mHeight = h; }
+        if (this.document) {
+            this.document.setWidth(w);
+            this.document.setHeight(h);
+            this.document.invalidateMeasure();
+        }
+        this.repaint();
+    }
+
+    /** The size the document is laid out at (device pixels): the viewport, or the canvas. */
+    getViewport(): { width: number; height: number } {
+        return this.viewport ? { ...this.viewport } : { width: this.canvas.width, height: this.canvas.height };
+    }
+
+    /**
+     * Allocate the canvas for the biggest size coming (a host's panel, at the device's
+     * pixel ratio) once, so setViewport never reallocates up to it.
+     */
+    reserveSurface(width: number, height: number): void {
+        this.growCanvas(Math.round(width), Math.round(height), false);
+    }
+
+    private static readonly SURFACE_STEP = 256;
+
+    private growCanvas(w: number, h: number, step = true): void {
+        const up = (v: number) => (step ? Math.ceil(v / RcdPlayer.SURFACE_STEP) * RcdPlayer.SURFACE_STEP : v);
+        const cw = this.canvas.width, ch = this.canvas.height;
+        if (cw < w || ch < h) {
+            this.canvas.width = Math.max(cw, up(w));
+            this.canvas.height = Math.max(ch, up(h));
+        }
+        // The canvas shows at its full size (the host's wrapper clips it to the document);
+        // only written when it changes, as a style write can cost a relayout of the page.
+        const d = this.remoteContext?.getDensity() || this.density || 1;
+        const sw = (this.canvas.width / d) + 'px', sh = (this.canvas.height / d) + 'px';
+        if (this.canvas.style.width !== sw) this.canvas.style.width = sw;
+        if (this.canvas.style.height !== sh) this.canvas.style.height = sh;
     }
 
     /**

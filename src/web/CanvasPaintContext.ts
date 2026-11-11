@@ -1239,7 +1239,7 @@ export class CanvasPaintContext extends PaintContext {
         const det = m.a * m.d - m.b * m.c;
         if (!det) return null;
         const inv = m.inverse();
-        const cw = this.ctx.canvas.width || 1, ch = this.ctx.canvas.height || 1;
+        const cw = this.surfaceW() || 1, ch = this.surfaceH() || 1;
         const xs: number[] = [], ys: number[] = [];
         for (const [x, y] of [[0, 0], [cw, 0], [0, ch], [cw, ch]]) {
             xs.push(inv.a * x + inv.c * y + inv.e);
@@ -2355,16 +2355,27 @@ export class CanvasPaintContext extends PaintContext {
     static gpuForSoftware3D = true;
     gpuForSoftware3D: boolean = CanvasPaintContext.gpuForSoftware3D;
 
+    /**
+     * The part of the canvas the document uses, in device pixels, from its top-left: the
+     * whole canvas unless a host keeps a canvas bigger than the document (RcdPlayer.setViewport,
+     * which reuses one backing store across sizes). What is sized to the drawing (the 3D
+     * buffers, a shader's area) follows this, not the canvas.
+     */
+    surfaceWidth = 0;
+    surfaceHeight = 0;
+    private surfaceW(): number { return this.surfaceWidth || this.ctx.canvas.width; }
+    private surfaceH(): number { return this.surfaceHeight || this.ctx.canvas.height; }
+
     private superFactor(): number {
         const v = this.supersample3D;
-        if (v === 'auto') return this.ctx.canvas.width * this.ctx.canvas.height <= 1_050_000 ? 2 : 1;
+        if (v === 'auto') return this.surfaceW() * this.surfaceH() <= 1_050_000 ? 2 : 1;
         return Math.max(1, Math.trunc(Number(v)) || 1);
     }
 
     private ensure3D(): SoftwarePaint3DContext {
         const k = this.superFactor();
-        const w = this.ctx.canvas.width * k;
-        const h = this.ctx.canvas.height * k;
+        const w = this.surfaceW() * k;
+        const h = this.surfaceH() * k;
         if (this.d3 === null) {
             this.d3 = new SoftwarePaint3DContext();
         }
@@ -2400,7 +2411,7 @@ export class CanvasPaintContext extends PaintContext {
         // The GL backend accumulates colour and depth across the whole pass, exactly as the
         // software buffers do, so this is where its buffers reset too.
         if (this.d3gl && this.d3gl.isAvailable()) {
-            this.d3gl.beginPass(this.ctx.canvas.width, this.ctx.canvas.height);
+            this.d3gl.beginPass(this.surfaceW(), this.surfaceH());
         }
     }
 
