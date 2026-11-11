@@ -191,6 +191,12 @@ export class CanvasPaintContext extends PaintContext {
     private lineCap: CanvasLineCap = 'butt';
     private lineJoin: CanvasLineJoin = 'miter';
     private miterLimit = 10;
+    // The dash path effect (PaintBundle.PATH_EFFECT). Part of the paint, applied with the
+    // stroke: kept on the context it was saved and restored with the canvas (ctx.save() holds
+    // the line dash), so a dash set before a matrixSave came back at its matrixRestore, undoing
+    // any change made in between -- Android's canvas.save() does not touch the Paint.
+    private dashIntervals: number[] = [];
+    private dashPhase = 0;
     private blendMode: GlobalCompositeOperation = 'source-over';
     private antiAlias = true;
     private filterBitmap = true;
@@ -238,7 +244,8 @@ export class CanvasPaintContext extends PaintContext {
     private paintStack: Array<{
         color: string; style: number; strokeWidth: number; textSize: number;
         alpha: number; lineCap: CanvasLineCap; lineJoin: CanvasLineJoin;
-        miterLimit: number; blendMode: GlobalCompositeOperation; antiAlias: boolean;
+        miterLimit: number; dashIntervals: number[]; dashPhase: number;
+        blendMode: GlobalCompositeOperation; antiAlias: boolean;
         letterSpacing: number; gradientStyle: CanvasGradient | CanvasPattern | null;
         fontFamily: string; fontWeight: number; fontItalic: boolean;
         filterBitmap: boolean;
@@ -778,6 +785,8 @@ export class CanvasPaintContext extends PaintContext {
         this.ctx.lineCap = this.lineCap;
         this.ctx.lineJoin = this.lineJoin;
         this.ctx.miterLimit = this.miterLimit;
+        this.ctx.setLineDash(this.dashIntervals);
+        this.ctx.lineDashOffset = this.dashPhase;
         this.ctx.globalAlpha = this.alpha * this.mLayerAlpha;
         this.ctx.globalCompositeOperation = this.blendMode;
     }
@@ -1065,8 +1074,8 @@ export class CanvasPaintContext extends PaintContext {
                     // An empty payload clears the effect, as the C++ player's does.
                     const count = upper;
                     if (count === 0) {
-                        this.ctx.setLineDash([]);
-                        this.ctx.lineDashOffset = 0;
+                        this.dashIntervals = [];
+                        this.dashPhase = 0;
                     } else if (count >= 3) {
                         const type = arr[i];
                         const phase = floatArg(arr[i + 1]);
@@ -1076,11 +1085,11 @@ export class CanvasPaintContext extends PaintContext {
                         for (let k = 0; k < len && k < count - 3; k++) intervals.push(floatArg(arr[i++]));
                         for (let k = 3 + len; k < count; k++) i++;
                         if (type === 1 && intervals.length >= 2 && intervals.length % 2 === 0) {
-                            this.ctx.setLineDash(intervals);
-                            this.ctx.lineDashOffset = phase;
+                            this.dashIntervals = intervals;
+                            this.dashPhase = phase;
                         } else {
-                            this.ctx.setLineDash([]);
-                            this.ctx.lineDashOffset = 0;
+                            this.dashIntervals = [];
+                            this.dashPhase = 0;
                         }
                     } else {
                         i += count;
@@ -1125,8 +1134,8 @@ export class CanvasPaintContext extends PaintContext {
         this.colorFilterArgb = 0;
         this.colorFilterMode = 3;
         this.activeShaderData = null;
-        this.ctx.setLineDash([]);
-        this.ctx.lineDashOffset = 0;
+        this.dashIntervals = [];
+        this.dashPhase = 0;
         this.setFont();
     }
 
@@ -1171,6 +1180,7 @@ export class CanvasPaintContext extends PaintContext {
             color: this.color, style: this.style, strokeWidth: this.strokeWidth,
             textSize: this.textSize, alpha: this.alpha, lineCap: this.lineCap,
             lineJoin: this.lineJoin, miterLimit: this.miterLimit,
+            dashIntervals: this.dashIntervals, dashPhase: this.dashPhase,
             blendMode: this.blendMode, antiAlias: this.antiAlias,
             letterSpacing: this.letterSpacing, gradientStyle: this.gradientStyle,
             activeShaderData: this.activeShaderData,
