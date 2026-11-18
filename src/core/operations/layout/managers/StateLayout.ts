@@ -136,6 +136,11 @@ export class StateLayout extends LayoutManager {
         }
         layout.setVisibility(Visibility.VISIBLE);
         measure.get(layout).setVisibility(Visibility.VISIBLE);
+        // A state shown again within the pass (its index read from a value the pass itself
+        // computes, a canvas's measured size: 1, then 3, then 1) is measured again, uncached:
+        // leaving it marked its children GONE in the pass, and a measure kept from its first
+        // visit (same constraints) would keep them GONE, the state showing nothing.
+        if (this.currentLayoutIndex !== this.measuredLayoutIndex) this.clearMeasureCache(layout, measure);
         layout.measure(context, minWidth, maxWidth, minHeight, maxHeight, measure);
 
         // After the measure, the new state's components that share an animation id with one
@@ -210,6 +215,12 @@ export class StateLayout extends LayoutManager {
 
         measure.get(this).copyFrom(measure.get(layout));
         this.measuredLayoutIndex = this.currentLayoutIndex;
+    }
+
+    /** Drops the measure cache of `c` and its descendants in this pass. */
+    private clearMeasureCache(c: Component, measure: MeasurePass): void {
+        measure.get(c).clearCache();
+        if (c instanceof LayoutComponent) for (const k of c.mChildrenComponents) this.clearMeasureCache(k, measure);
     }
 
     layout(context: RemoteContext, measure: MeasurePass): void {
