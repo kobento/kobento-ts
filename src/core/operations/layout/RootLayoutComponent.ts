@@ -129,14 +129,44 @@ export class RootLayoutComponent extends Component {
             paintContext.clipRect(0, 0, this.mWidth, this.mHeight);
         }
 
+        this.paintOperations(paintContext);
+
+        paintContext.restore();
+    }
+
+    /**
+     * The root's paint operations only (androidx CL 4445989): the data operations declared in
+     * the root (strings, floats...) were applied when the document was initialized, and
+     * applying them again at paint would reset values changed since. Dirty variables are
+     * brought up to date first.
+     */
+    private paintOperations(paintContext: PaintContext): void {
+        const remoteContext = paintContext.getContext();
         for (const op of this.getList()) {
+            if (op.isDirty() && typeof (op as any).updateVariables === 'function') {
+                (op as any).updateVariables(remoteContext);
+                op.markNotDirty();
+            }
             if (op instanceof PaintOperation) {
                 op.paint(paintContext);
                 remoteContext.incrementOpCount(op);
             }
         }
+    }
 
-        paintContext.restore();
+    /**
+     * Used while the root's bounds are animated (after a resize): unlike the generic one
+     * (Component.paintingComponent), it does not apply the root's data operations again.
+     */
+    paintingComponent(paintContext: PaintContext): void {
+        const context = paintContext.getContext();
+        const prev = context.mLastComponent;
+        context.mLastComponent = this;
+        paintContext.matrixSave();
+        paintContext.matrixTranslate(this.mX, this.mY);
+        this.paintOperations(paintContext);
+        paintContext.matrixRestore();
+        context.mLastComponent = prev;
     }
 
     getComponent(id: number): Component | null {

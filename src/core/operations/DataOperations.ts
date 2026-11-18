@@ -34,11 +34,19 @@ export class TextData extends Operation {
         super(); this.mTextId = textId; this.mText = text;
     }
 
-    update(other: TextData): void { this.mText = other.mText; }
+    // The context this text was loaded into. Java applies a data operation when the document
+    // is initialized and, at paint, only when it is dirty (CoreDocument.paint, and since
+    // androidx CL 4445989 the root's paint too); here every frame applies every operation, so
+    // a string changed since the load (edited, set by the player) was reset each frame.
+    private mLoadedIn: RemoteContext | null = null;
+
+    update(other: TextData): void { this.mText = other.mText; this.mLoadedIn = null; }
 
     write(_buffer: WireBuffer): void { /* stub */ }
 
     apply(context: RemoteContext): void {
+        if (this.mLoadedIn === context && !this.isDirty()) return;
+        this.mLoadedIn = context;
         context.loadText(this.mTextId, this.mText);
     }
 
