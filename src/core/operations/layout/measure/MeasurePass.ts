@@ -36,8 +36,10 @@ export class MeasurePass {
             // whatever a VisibilityModifier had set — so a GONE component silently
             // became visible again on every layout pass. Masking with & 15 strips any transient
             // visibility overrides from previous layout passes.
+            // (The visibility asked for, not the last layout's result: Java's measure policies
+            // set it from getMeasureVisibility.)
             m = new ComponentMeasure(id, c.getX(), c.getY(), c.getWidth(), c.getHeight(),
-                                     c.getVisibility() & 15);
+                                     c.mScheduledVisibility & 15);
             this.mList.set(id, m);
         }
         return m;

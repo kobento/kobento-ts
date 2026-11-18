@@ -60,6 +60,14 @@ export class Component extends PaintOperation implements Container {
     mHeight = 0;
     mZIndex = 0;
     mVisibility = Visibility.VISIBLE;
+    /**
+     * The visibility the document asks for (setVisibility: a visibility modifier, a
+     * stateLayout showing a state), as Java's mScheduledVisibility; mVisibility is what the
+     * last layout gave it. A pass measures with this one (Java getMeasureVisibility): a child a
+     * stateLayout hid when leaving its state (mVisibility GONE, set by the layout) is visible
+     * again when that state is shown, instead of staying GONE pass after pass.
+     */
+    mScheduledVisibility = Visibility.VISIBLE;
     mNeedsMeasure = true;
     mNeedsRepaint = true;
     mFirstLayout = true;
@@ -138,7 +146,8 @@ export class Component extends PaintOperation implements Container {
     getVisibility(): number { return this.mVisibility; }
 
     setVisibility(v: number): void {
-        if (v === this.mVisibility) return;
+        if (v === this.mVisibility && v === this.mScheduledVisibility) return;
+        this.mScheduledVisibility = v;
         this.mVisibility = v;
         this.invalidateMeasure();
         // A child becoming GONE changes the *parent's* layout, so the parent has to
