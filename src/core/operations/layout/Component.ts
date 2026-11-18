@@ -68,6 +68,13 @@ export class Component extends PaintOperation implements Container {
      * again when that state is shown, instead of staying GONE pass after pass.
      */
     mScheduledVisibility = Visibility.VISIBLE;
+    /**
+     * True while a host editor is shown over this component by a text input modifier: a text
+     * component then draws no text, the editor shows it (Java Component.isEditing).
+     */
+    private mEditing = false;
+    isEditing(): boolean { return this.mEditing; }
+    setEditing(editing: boolean): void { this.mEditing = editing; }
     mNeedsMeasure = true;
     mNeedsRepaint = true;
     mFirstLayout = true;

@@ -63,7 +63,7 @@ import {
     WidthModifier, HeightModifier, WidthInModifier, HeightInModifier,
     CollapsiblePriorityModifier, BackgroundModifier, BorderModifier,
     PaddingModifier, RoundedClipRectModifier, ClipRectModifier,
-    ClickModifier, MultiClickModifier, DimensionConstraintsModifier,
+    ClickModifier, MultiClickModifier, TextInputModifier, DimensionConstraintsModifier,
     TouchDownModifier, TouchUpModifier, TouchCancelModifier,
     VisibilityModifier, OffsetModifier, ZIndexModifier, GraphicsLayerModifier,
     ScrollModifier, MarqueeModifier, RippleModifier, DrawContentModifier,
@@ -241,6 +241,7 @@ export class Operations {
         m.set(ClipRectModifier.OP_CODE, ClipRectModifier.read);
         m.set(ClickModifier.OP_CODE, ClickModifier.read);
         m.set(MultiClickModifier.OP_CODE, MultiClickModifier.read);
+        m.set(TextInputModifier.OP_CODE, TextInputModifier.read);
         m.set(DimensionConstraintsModifier.OP_CODE, DimensionConstraintsModifier.read);
         m.set(TouchDownModifier.OP_CODE, TouchDownModifier.read);
         m.set(TouchUpModifier.OP_CODE, TouchUpModifier.read);

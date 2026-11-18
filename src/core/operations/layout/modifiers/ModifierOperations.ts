@@ -11,6 +11,7 @@ import { TouchExpression } from '../../TouchExpression';
 import type { PaintContext } from '../../../PaintContext';
 import { CubicEasing } from '../../utilities/easing/CubicEasing';
 import { Easing } from '../../utilities/easing/Easing';
+import { TextInputSession } from '../../../TextInput';
 
 /**
  * What the measure pass needs from a min/max constraint, regardless of which op it
@@ -1450,5 +1451,150 @@ export class AccessibilitySemantics extends Operation {
         operations.push(new AccessibilitySemantics(
             contentDescriptionId, role, textId, stateDescriptionId,
             mode, enabled, clickable));
+    }
+}
+
+// ── MODIFIER_TEXT_INPUT (60): INT textId, keyboardType, imeAction, flags, maxLength, filter, hintId ─
+// Java source: operations/layout/modifiers/TextInputModifierOperation.java (androidx CL 4451608).
+// Declares the string a component shows as editable: on click, a player with a TextInputSupport
+// on its PaintContext presents an editor over the component and writes edits back into the
+// string (every binding on it follows). Without one it is inert and the component shows its text.
+export class TextInputModifier extends Operation implements VariableSupport {
+    static readonly OP_CODE = 60;
+
+    // Keyboard types (Compose KeyboardType's values)
+    static readonly KEYBOARD_UNSPECIFIED = 0;
+    static readonly KEYBOARD_TEXT = 1;
+    static readonly KEYBOARD_ASCII = 2;
+    static readonly KEYBOARD_NUMBER = 3;
+    static readonly KEYBOARD_PHONE = 4;
+    static readonly KEYBOARD_URI = 5;
+    static readonly KEYBOARD_EMAIL = 6;
+    static readonly KEYBOARD_PASSWORD = 7;
+    static readonly KEYBOARD_NUMBER_PASSWORD = 8;
+    static readonly KEYBOARD_DECIMAL = 9;
+    // IME actions (Compose ImeAction's values)
+    static readonly IME_ACTION_NONE = 0;
+    static readonly IME_ACTION_DEFAULT = 1;
+    static readonly IME_ACTION_GO = 2;
+    static readonly IME_ACTION_SEARCH = 3;
+    static readonly IME_ACTION_SEND = 4;
+    static readonly IME_ACTION_PREVIOUS = 5;
+    static readonly IME_ACTION_NEXT = 6;
+    static readonly IME_ACTION_DONE = 7;
+    // Flags
+    static readonly FLAG_SINGLE_LINE = 1;
+    static readonly FLAG_COMMIT_ON_DONE = 1 << 1;
+    static readonly FLAG_AUTO_CORRECT = 1 << 2;
+    static readonly FLAG_CAPITALIZE_CHARACTERS = 1 << 3;
+    static readonly FLAG_CAPITALIZE_WORDS = 1 << 4;
+    static readonly FLAG_CAPITALIZE_SENTENCES = 1 << 5;
+    // Input filters, applied by the editor before a keystroke reaches the string
+    static readonly FILTER_NONE = 0;
+    static readonly FILTER_DIGITS = 1;
+    static readonly FILTER_DECIMAL = 2;
+    static readonly FILTER_ALPHANUMERIC = 3;
+    static readonly FILTER_HEXADECIMAL = 4;
+
+    private static readonly HINT_ALPHA_PERCENT = 45;
+    private mSession: TextInputSession | null = null;
+    private readonly mHintBounds = new Float32Array(4);
+
+    constructor(readonly mTextId: number, readonly mKeyboardType: number, readonly mImeAction: number,
+                readonly mFlags: number, readonly mMaxLength: number, readonly mFilter: number,
+                readonly mHintId: number) { super(); }
+
+    getTextId(): number { return this.mTextId; }
+    getKeyboardType(): number { return this.mKeyboardType; }
+    getImeAction(): number { return this.mImeAction; }
+    getFlags(): number { return this.mFlags; }
+    hasFlag(flag: number): boolean { return (this.mFlags & flag) !== 0; }
+    getMaxLength(): number { return this.mMaxLength; }
+    getFilter(): number { return this.mFilter; }
+    getHintId(): number { return this.mHintId; }
+    getSession(): TextInputSession | null { return this.mSession; }
+
+    private static support(context: RemoteContext) {
+        return context.getPaintContext()?.getTextInputSupport() ?? null;
+    }
+
+    /** A click on the component: starts a session when the player supports text input. */
+    onClickComponent(context: RemoteContext, component: any): boolean {
+        const support = TextInputModifier.support(context);
+        if (!support) return false;
+        if (this.mSession && this.mSession.isActive()) return true;   // already editing it
+        this.mSession = new TextInputSession(context, component, this);
+        component.setEditing(true);
+        support.startTextInput(this.mSession);
+        context.needsRepaint();
+        return true;
+    }
+
+    /** Ends the session from the document's side (it is unloaded): the host drops its editor. */
+    stopTextInput(context: RemoteContext): void {
+        const session = this.mSession;
+        if (!session || !session.isActive()) return;
+        TextInputModifier.support(context)?.stopTextInput(session);
+        session.end();
+    }
+
+    /** Called by the session when it ends: the component draws its text again. */
+    onSessionEnded(context: RemoteContext, session: TextInputSession): void {
+        if (this.mSession !== session) return;
+        this.mSession = null;
+        (session.getComponent() as any).setEditing(false);
+        context.needsRepaint();
+    }
+
+    /** The text input modifier of a component, or null. */
+    static find(component: any): TextInputModifier | null {
+        for (const m of component?.mComponentModifiers ?? []) if (m instanceof TextInputModifier) return m;
+        return null;
+    }
+
+    /**
+     * Draws the hint where an empty editable text would be, at 45% of the text's alpha, aligned
+     * as the text is. The paint is the component's text paint, restored after.
+     */
+    paintHint(context: PaintContext, paint: PaintBundle, textColor: number, contentWidth: number, textAlign: number): boolean {
+        if (this.mHintId === 0) return false;
+        const hint = context.getContext().getText(this.mHintId);
+        if (!hint) return false;
+        const length = hint.length;
+        context.getTextBounds(this.mHintId, 0, length, 0, this.mHintBounds);
+        const hintWidth = this.mHintBounds[2] - this.mHintBounds[0];
+        // TextLayout's TEXT_ALIGN_* values: 3 center, 2 right, 6 end.
+        const px = textAlign === 3 ? (contentWidth - hintWidth) / 2 : textAlign === 2 || textAlign === 6 ? contentWidth - hintWidth : 0;
+        const alpha = Math.floor(((textColor >>> 24) * TextInputModifier.HINT_ALPHA_PERCENT) / 100);
+        paint.setColor(((alpha << 24) | (textColor & 0x00FFFFFF)) | 0);
+        context.replacePaint(paint);
+        context.drawTextRun(this.mHintId, 0, length, 0, 0, px - this.mHintBounds[0], -this.mHintBounds[1], false);
+        paint.setColor(textColor);
+        context.replacePaint(paint);
+        return true;
+    }
+
+    /** At paint: keeps the host's editor on the component when it moved. */
+    paintModifier(paintContext: PaintContext): void {
+        const session = this.mSession;
+        if (!session || !session.isActive()) return;
+        if (session.updateBounds()) TextInputModifier.support(paintContext.getContext())?.updateTextInputBounds(session);
+    }
+
+    registerListening(context: RemoteContext): void {
+        context.listensTo(this.mTextId, this);
+        if (this.mHintId !== 0) context.listensTo(this.mHintId, this);
+    }
+    updateVariables(_context: RemoteContext): void { /* the session reads the text live */ }
+
+    write(buffer: WireBuffer): void {
+        buffer.start(TextInputModifier.OP_CODE);
+        for (const v of [this.mTextId, this.mKeyboardType, this.mImeAction, this.mFlags, this.mMaxLength, this.mFilter, this.mHintId]) buffer.writeInt(v);
+    }
+    apply(_context: RemoteContext): void { /* handled by the component */ }
+    deepToString(indent: string): string { return `${indent}TextInputModifier(${this.mTextId})`; }
+    static read(buffer: WireBuffer, operations: Operation[]): void {
+        operations.push(new TextInputModifier(buffer.readInt(), buffer.readInt(), buffer.readInt(), buffer.readInt(),
+            buffer.readInt(), buffer.readInt(), buffer.readInt()));
     }
 }

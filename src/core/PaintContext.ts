@@ -3,8 +3,13 @@
 import type { RemoteContext } from './RemoteContext';
 import type { RemoteClock } from './RemoteClock';
 import type { PaintBundle } from './operations/paint/PaintBundle';
+import type { TextInputSupport } from './TextInput';
 
 export abstract class PaintContext {
+    private mTextInputSupport: TextInputSupport | null = null;
+    /** Installs the host support that edits strings a text input modifier declares editable (null: inert). */
+    setTextInputSupport(support: TextInputSupport | null): void { this.mTextInputSupport = support; }
+    getTextInputSupport(): TextInputSupport | null { return this.mTextInputSupport; }
     static readonly TEXT_MEASURE_MONOSPACE_WIDTH = 0x01;
     static readonly TEXT_MEASURE_FONT_HEIGHT = 0x02;
     static readonly TEXT_MEASURE_SPACES = 0x04;

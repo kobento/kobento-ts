@@ -1,5 +1,6 @@
 // Web player entry point: loads .rcd files and renders them on a Canvas.
 
+import { WebTextInputSupport } from './TextInput';
 import { WireBuffer } from '../core/WireBuffer';
 import { CoreDocument } from '../core/CoreDocument';
 import { RemoteComposeBuffer } from '../core/RemoteComposeBuffer';
@@ -83,6 +84,28 @@ export class RcdPlayer {
      * else null: the document then fills the canvas, as resize() makes it.
      */
     private viewport: { width: number; height: number } | null = null;
+    /**
+     * Text input (MODIFIER_TEXT_INPUT): an editor over a component whose string is editable,
+     * on a real page only (not headless, where nothing can type). setTextInputEnabled(false)
+     * leaves the modifier inert, the text shown as is.
+     */
+    private textInput: WebTextInputSupport | null =
+        typeof HTMLInputElement !== 'undefined' && typeof document !== 'undefined' && !!document.body
+            ? new WebTextInputSupport({
+                rect: (x, y, w, h) => {
+                    const r = this.canvas.getBoundingClientRect();
+                    const sx = r.width / (this.canvas.width || 1), sy = r.height / (this.canvas.height || 1);
+                    const s = this.mContentScale || 1;
+                    return [r.left + (x * s + this.mContentOffsetX) * sx, r.top + (y * s + this.mContentOffsetY) * sy, w * s * sx, h * s * sy];
+                },
+                scale: () => {
+                    const r = this.canvas.getBoundingClientRect();
+                    return (this.mContentScale || 1) * (r.width / (this.canvas.width || 1));
+                },
+                repaint: () => this.repaint(),
+            })
+            : null;
+    private textInputEnabled = true;
     private static readonly SETTLE_FRAMES = 4;
 
     // Draws the custom components — embedded documents, videos — for every document this
@@ -293,6 +316,7 @@ export class RcdPlayer {
 
     async loadFromArrayBuffer(data: ArrayBuffer): Promise<CoreDocument> {
         this.stop();
+        this.textInput?.stop();   // an editor open on the previous document is closed
 
         const buffer = RemoteComposeBuffer.fromArrayBuffer(data);
         const doc = new CoreDocument();
@@ -329,6 +353,7 @@ export class RcdPlayer {
         // animated bitmap holds.
         if (this.paintContext) this.paintContext.dispose();
         this.paintContext = new CanvasPaintContext(null as any, this.ctx);
+        if (this.textInputEnabled) this.paintContext.setTextInputSupport(this.textInput);
         // A document that draws wireframes keeps its software 3D on software: hidden-line edges
         // need every face in the software depth buffer (drawsWireframe3D).
         if (this.paintContext.gpuForSoftware3D && drawsWireframe3D(doc.getOperations())) {
@@ -457,10 +482,18 @@ export class RcdPlayer {
      */
     destroy(): void {
         this.stop();
+        this.textInput?.stop();
         this.canvas.removeEventListener('pointerdown', this.onPointerDown);
         if (this.paintContext) {
             this.paintContext.destroy();
         }
+    }
+
+    /** Text input on (the default, on a page) or off: off, an editable text is shown as is. */
+    setTextInputEnabled(enabled: boolean): void {
+        this.textInputEnabled = enabled;
+        if (!enabled) this.textInput?.stop();
+        this.paintContext?.setTextInputSupport(enabled ? this.textInput : null);
     }
 
     repaint(): void {
