@@ -369,9 +369,11 @@ export class AnimateMeasure {
             this.mTarget.setW(targetW);
             this.mTarget.setH(targetH);
             this.mTarget.setVisibility(targetVisibility);
-            this.mStartTime = currentTime;
-            this.mP = 0;
-            this.mVp = 0;
+            // The time is not restarted (as in the reference): a target that changes every
+            // frame (a drag moving a spacer, a live resize) restarted the motion and the fade
+            // at 0 each frame, freezing the component at its origin, nearly transparent (INT-14's
+            // dragged row flashed once, then vanished). The animation runs out its time from
+            // where the component is now.
         }
     }
 
