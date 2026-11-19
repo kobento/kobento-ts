@@ -78,6 +78,12 @@ export class Component extends PaintOperation implements Container {
     mNeedsMeasure = true;
     mNeedsRepaint = true;
     mFirstLayout = true;
+    // Whether this component has been laid out visible once. One that has only ever been GONE
+    // (a title or page shown by a visibility modifier, not yet selected) was laid out at a
+    // placeholder position (its parent's origin): its first entrance starts at its target
+    // bounds and only fades, instead of moving from that position (a slide down the first
+    // time a hidden title appeared, a plain fade every time after).
+    mLaidOutVisible = false;
     // The visibility this component was last laid out with: what an animation starts from.
     // (A visibility modifier sets mVisibility as soon as its variable changes; the reference
     // schedules it, leaving mVisibility at the laid-out value until the next layout.)
@@ -223,8 +229,10 @@ export class Component extends PaintOperation implements Container {
 
         if (allowAnimation) {
             if (this.mAnimateMeasure === null) {
-                const origin = new ComponentMeasure(this.mComponentId, this.mX, this.mY, this.mWidth, this.mHeight, this.mLayoutVisibility);
                 const target = new ComponentMeasure(this.mComponentId, m.getX(), m.getY(), m.getW(), m.getH(), m.getVisibility());
+                const origin = this.mLaidOutVisible
+                    ? new ComponentMeasure(this.mComponentId, this.mX, this.mY, this.mWidth, this.mHeight, this.mLayoutVisibility)
+                    : new ComponentMeasure(this.mComponentId, m.getX(), m.getY(), m.getW(), m.getH(), this.mLayoutVisibility);
                 if (!target.same(origin)) {
                     const now = context.mClock?.millis() ?? Date.now();
                     this.mAnimateMeasure = new AnimateMeasure(
@@ -267,6 +275,7 @@ export class Component extends PaintOperation implements Container {
         // Keep the override bits: a child a collapsible layout dropped (OVERRIDE_GONE) must start
         // the next pass gone, or every layout animates it out again and repaints forever.
         this.mLayoutVisibility = m.getVisibility();
+        if (!Visibility.isGone(m.getVisibility())) this.mLaidOutVisible = true;
         this.mFirstLayout = false;
     }
 

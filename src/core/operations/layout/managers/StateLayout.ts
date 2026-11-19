@@ -154,6 +154,7 @@ export class StateLayout extends LayoutManager {
                 const prev = this.statePaintedComponents.get(id)?.[this.previousLayoutIndex] ?? null;
                 if (prev && c !== prev) {
                     c.mFirstLayout = false;
+                    c.mLaidOutVisible = true; // (it moves from the previous state's bounds)
                     c.setX(prev.getX());
                     c.setY(prev.getY());
                     c.setWidth(prev.getWidth());
