@@ -76,6 +76,8 @@ export class BitmapData extends Operation {
 
     getWidth(): number { return this.mWidth; }
     getHeight(): number { return this.mHeight; }
+    /** A URL bitmap declared 1x1 (size unknown) takes its picture's size once it arrives. */
+    setSize(width: number, height: number): void { this.mWidth = width; this.mHeight = height; }
 
     update(other: BitmapData): void {
         this.mEncoding = other.mEncoding; this.mType = other.mType;

@@ -335,6 +335,15 @@ export class CanvasPaintContext extends PaintContext {
         // bytes each time. Decoding once is enough — and for an animated one, essential: a
         // fresh decoder every frame is one that never gets to its first picture.
         if (this.bitmapPromises.has(imageId)) return;
+        // ENCODING_URL (1): the payload is the picture's address in UTF-8
+        // (RemoteComposeBuffer.storeBitmapUrl). It is fetched once, without blocking the
+        // first frame: nothing is drawn for it until it arrives (a document shows its own
+        // placeholder under it), then the player is asked to lay out and paint again.
+        if (encoding === 1) {
+            this.bitmapPromises.set(imageId, this.loadUrlBitmap(imageId, width, height,
+                new TextDecoder().decode(bitmap)));
+            return;
+        }
         // ENCODING_EMPTY (3) and ENCODING_COMPONENT_OFFSCREEN_BUFFER (4) carry dimensions
         // and no pixels — they exist to be drawn into, not decoded. Handing their empty
         // payload to an <img> fails asynchronously and logs "failed to load bitmap N" on
@@ -375,6 +384,60 @@ export class CanvasPaintContext extends PaintContext {
             img.src = url;
         });
         this.bitmapPromises.set(imageId, promise);
+    }
+
+    /**
+     * Called when a bitmap that arrives after the first frame (a URL) is ready to draw, so an
+     * idle player paints again. The player sets it; without it the picture shows on the next
+     * repaint that something else causes.
+     */
+    onBitmapLoaded: ((imageId: number) => void) | null = null;
+
+    /**
+     * Fetch a URL bitmap, decode it and cache it. The declared size is the picture's size in
+     * the document (srcRight/srcBottom of a drawScaledBitmap are in its pixels): a picture of
+     * another size is resampled to it. 1x1, what storeBitmapUrl writes when the size is not
+     * known, takes the picture's own size instead, and the BitmapData then reports it.
+     */
+    private async loadUrlBitmap(imageId: number, width: number, height: number, url: string): Promise<void> {
+        try {
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const bytes = new Uint8Array(await response.arrayBuffer());
+            if (this.disposed) return;
+            let img: any = await this.decodeImage(bytes);
+            if (this.disposed) return;
+            const nw = img.naturalWidth ?? img.width, nh = img.naturalHeight ?? img.height;
+            const sized = width > 1 || height > 1;
+            if (sized && (nw !== width || nh !== height)) {
+                const c = this.createLayerCanvas(width, height);
+                c.imageSmoothingEnabled = true;
+                (c as any).imageSmoothingQuality = 'high';
+                c.drawImage(img, 0, 0, width, height);
+                img = c.canvas;
+            } else if (!sized) {
+                const data = this.getContext()?.getObject?.(imageId) as any;
+                if (data && typeof data.setSize === 'function') data.setSize(nw, nh);
+            }
+            this.bitmapCache.set(imageId, img);
+            this.needsRepaint();
+            this.onBitmapLoaded?.(imageId);
+        } catch (e) {
+            console.warn(`CanvasPaintContext: failed to load bitmap ${imageId} from ${url}`, e);
+        }
+    }
+
+    /** Bytes of an encoded picture (PNG, JPEG, WebP, GIF) to something drawImage takes. */
+    decodeImage(bytes: Uint8Array): Promise<HTMLImageElement | ImageBitmap> {
+        const blob = new Blob([bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer]);
+        if (typeof createImageBitmap === 'function') return createImageBitmap(blob);
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+        return new Promise((resolve, reject) => {
+            img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+            img.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
+            img.src = url;
+        });
     }
 
     // `videos` maps image ids to video URLs. Called before the document's data pass, so a

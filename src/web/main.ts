@@ -360,6 +360,12 @@ export class RcdPlayer {
             this.paintContext.gpuForSoftware3D = false;
         }
         this.paintContext.setBitmapVideos(this.bitmapVideos);
+        // A URL bitmap arrives after the first frame: lay out again (an image sized by its
+        // picture changes size) and paint, even when the document is otherwise idle.
+        this.paintContext.onBitmapLoaded = () => {
+            this.document?.invalidateMeasure();
+            this.scheduleRepaint();
+        };
         this.remoteContext = new WebRemoteContext(this.paintContext);
 
         // Wire up
