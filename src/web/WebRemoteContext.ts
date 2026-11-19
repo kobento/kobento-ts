@@ -234,8 +234,10 @@ export class WebRemoteContext extends RemoteContext {
     // --- Text override ---
 
     overrideText(id: number, valueId: number): void {
-        const text = this.mRemoteComposeState.getFromId(valueId) as string;
-        if (text) this.loadText(id, text);
+        // Any string, the empty one included: a valueStringChange to "" clears a field (a
+        // search bar's clear button), as AndroidRemoteContext.overrideText writes it.
+        const text = this.mRemoteComposeState.getFromId(valueId);
+        if (typeof text === 'string') this.loadText(id, text);
     }
 
     // --- Animated float ---
