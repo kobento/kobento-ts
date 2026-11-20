@@ -101,7 +101,7 @@ export class AnimateMeasure {
                             this.mComponent.getWidth(),
                             this.mComponent.getHeight()
                         );
-                        this.mComponent.paintingComponent(context);
+                        this.mComponent.paintLayered(context);
                         context.restore();
                         context.restorePaint();
                         context.restore();
@@ -117,7 +117,7 @@ export class AnimateMeasure {
                             this.mComponent.getWidth(),
                             this.mComponent.getHeight()
                         );
-                        this.mComponent.paintingComponent(context);
+                        this.mComponent.paintLayered(context);
                         context.restore();
                         context.restore();
                         break;
@@ -132,7 +132,7 @@ export class AnimateMeasure {
                             this.mComponent.getWidth(),
                             this.mComponent.getHeight()
                         );
-                        this.mComponent.paintingComponent(context);
+                        this.mComponent.paintLayered(context);
                         context.restore();
                         context.restore();
                         break;
@@ -147,7 +147,7 @@ export class AnimateMeasure {
                             this.mComponent.getWidth(),
                             this.mComponent.getHeight()
                         );
-                        this.mComponent.paintingComponent(context);
+                        this.mComponent.paintLayered(context);
                         context.restore();
                         context.restore();
                         break;
@@ -162,7 +162,7 @@ export class AnimateMeasure {
                             this.mComponent.getWidth(),
                             this.mComponent.getHeight()
                         );
-                        this.mComponent.paintingComponent(context);
+                        this.mComponent.paintLayered(context);
                         context.restore();
                         context.restore();
                         break;
@@ -179,7 +179,7 @@ export class AnimateMeasure {
                             this.mComponent.getWidth(),
                             this.mComponent.getHeight()
                         );
-                        this.mComponent.paintingComponent(context);
+                        this.mComponent.paintLayered(context);
                         context.restore();
                         context.restorePaint();
                         context.restore();
@@ -205,7 +205,7 @@ export class AnimateMeasure {
                             this.mComponent.getWidth(),
                             this.mComponent.getHeight()
                         );
-                        this.mComponent.paintingComponent(context);
+                        this.mComponent.paintLayered(context);
                         context.restore();
                         context.restorePaint();
                         context.restore();
@@ -223,7 +223,7 @@ export class AnimateMeasure {
                             this.mComponent.getWidth(),
                             this.mComponent.getHeight()
                         );
-                        this.mComponent.paintingComponent(context);
+                        this.mComponent.paintLayered(context);
                         context.restore();
                         context.restorePaint();
                         context.restore();
@@ -239,7 +239,7 @@ export class AnimateMeasure {
                             this.mComponent.getWidth(),
                             this.mComponent.getHeight()
                         );
-                        this.mComponent.paintingComponent(context);
+                        this.mComponent.paintLayered(context);
                         context.restore();
                         context.restore();
                         break;
@@ -254,7 +254,7 @@ export class AnimateMeasure {
                             this.mComponent.getWidth(),
                             this.mComponent.getHeight()
                         );
-                        this.mComponent.paintingComponent(context);
+                        this.mComponent.paintLayered(context);
                         context.restore();
                         context.restore();
                         break;
@@ -269,7 +269,7 @@ export class AnimateMeasure {
                             this.mComponent.getWidth(),
                             this.mComponent.getHeight()
                         );
-                        this.mComponent.paintingComponent(context);
+                        this.mComponent.paintLayered(context);
                         context.restore();
                         context.restore();
                         break;
@@ -284,21 +284,21 @@ export class AnimateMeasure {
                             this.mComponent.getWidth(),
                             this.mComponent.getHeight()
                         );
-                        this.mComponent.paintingComponent(context);
+                        this.mComponent.paintLayered(context);
                         context.restore();
                         context.restore();
                         break;
                     }
                     default: {
-                        this.mComponent.paintingComponent(context);
+                        this.mComponent.paintLayered(context);
                         break;
                     }
                 }
             } else {
-                this.mComponent.paintingComponent(context);
+                this.mComponent.paintLayered(context);
             }
         } else if (!this.mTarget.isGone()) {
-            this.mComponent.paintingComponent(context);
+            this.mComponent.paintLayered(context);
         }
 
         if (this.mP >= 1 && this.mVp >= 1) {

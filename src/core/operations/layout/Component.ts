@@ -345,6 +345,11 @@ export class Component extends PaintOperation implements Container {
         this.paintingComponent(paintContext);
     }
 
+    /** paintingComponent, inside the component's graphicsLayer when it has one (LayoutComponent). */
+    paintLayered(paintContext: PaintContext): void {
+        this.paintingComponent(paintContext);
+    }
+
     paintingComponent(paintContext: PaintContext): void {
         const context = paintContext.getContext();
         paintContext.matrixSave();

@@ -538,30 +538,40 @@ export class LayoutComponent extends Component {
                 op.apply(context);
             }
             paintContext.matrixRestore();
-        } else if (this.mGraphicsLayerMod) {
-            // Java LayoutComponent / CoreText paintingComponent: at the component's origin,
-            // startGraphicsLayer(w, h), hand it the non-default attributes
-            // (fillInAttributes -> setGraphicsLayer), paint modifiers, content and children
-            // into it, then endGraphicsLayer composites it with alpha, scale, rotation and
-            // translation. Java evaluates the attribute values in the modifier's paint(),
-            // after fillInAttributes, so a variable shows a frame late; evaluating first
-            // gives the same values without that lag.
-            const layer = this.mGraphicsLayerMod;
-            layer.evaluate(paintContext);
-            paintContext.matrixSave();
-            paintContext.matrixTranslate(this.mX, this.mY);
-            paintContext.startGraphicsLayer(Math.trunc(this.getWidth()), Math.trunc(this.getHeight()));
-            const attributes = new Map<number, any>();
-            layer.fillInAttributes(attributes);
-            paintContext.setGraphicsLayer(attributes);
-            // paintingComponent translates by (mX, mY) itself; the layer is already there.
-            paintContext.matrixTranslate(-this.mX, -this.mY);
-            this.paintingComponent(paintContext);
-            paintContext.endGraphicsLayer();
-            paintContext.matrixRestore();
         } else {
-            super.paint(paintContext);
+            this.paintLayered(paintContext);
         }
+    }
+
+    /**
+     * paintingComponent inside the graphicsLayer, if any. Java LayoutComponent / CoreText
+     * paintingComponent: at the component's origin, startGraphicsLayer(w, h), hand it the
+     * non-default attributes (fillInAttributes -> setGraphicsLayer), paint modifiers, content
+     * and children into it, then endGraphicsLayer composites it with alpha, scale, rotation
+     * and translation. Java evaluates the attribute values in the modifier's paint(), after
+     * fillInAttributes, so a variable shows a frame late; evaluating first gives the same
+     * values without that lag. A layout animation (AnimateMeasure.paint) paints through here
+     * too, as Java's does through paintingComponent: it painted without the layer, so a
+     * screen fading in while it slid (translationX) showed in place, see-through (CMP-76).
+     */
+    override paintLayered(paintContext: PaintContext): void {
+        if (!this.mGraphicsLayerMod) {
+            this.paintingComponent(paintContext);
+            return;
+        }
+        const layer = this.mGraphicsLayerMod;
+        layer.evaluate(paintContext);
+        paintContext.matrixSave();
+        paintContext.matrixTranslate(this.mX, this.mY);
+        paintContext.startGraphicsLayer(Math.trunc(this.getWidth()), Math.trunc(this.getHeight()));
+        const attributes = new Map<number, any>();
+        layer.fillInAttributes(attributes);
+        paintContext.setGraphicsLayer(attributes);
+        // paintingComponent translates by (mX, mY) itself; the layer is already there.
+        paintContext.matrixTranslate(-this.mX, -this.mY);
+        this.paintingComponent(paintContext);
+        paintContext.endGraphicsLayer();
+        paintContext.matrixRestore();
     }
 
     /**
