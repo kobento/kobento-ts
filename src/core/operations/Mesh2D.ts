@@ -1,8 +1,9 @@
 // 2D vertex meshes — ADD_MESH_2D (104), DRAW_MESH_2D (105), MATRIX_FROM_MESH_2D (106).
 //
 // Ported from androidx remote-core AddMesh2D.java / DrawMesh2D.java / MatrixFromMesh2D.java
-// (2026-09). The expression form evaluates nine channels over (u, v), which reach the
-// evaluator as VAR1/VAR2 — the a[0]/a[1] slots — exactly as the reference binds them.
+// (2026-09; FLAG_ANTIALIAS 2026-11). The expression form evaluates nine channels over (u, v),
+// which reach the evaluator as VAR1/VAR2 — the a[0]/a[1] slots — exactly as the reference
+// binds them.
 
 import { PaintOperation } from '../PaintOperation';
 import { Operation } from '../Operation';
@@ -30,6 +31,20 @@ function isResolvableBits(bits: number): boolean {
 
 export class AddMesh2D extends Operation implements VariableSupport {
     static readonly OP_CODE = 104;
+
+    /** In `flags`: grow an alpha-fading skirt around the mesh's edges. The payload then ends in
+     * one more float, the skirt's width in the mesh's own units, which may be a variable. */
+    static readonly FLAG_ANTIALIAS = 1 << 8;
+    /** The bits of `flags` holding a TYPE_SPLINE_ROUND_STRIP's cap columns. */
+    static readonly CAP_SEGMENTS_MASK = 0xff;
+    static readonly DEFAULT_ANTIALIAS_WIDTH = 1;
+
+    // FLAG_ANTIALIAS: the skirt's boundary loops depend only on the header, so they are worked
+    // out once, as are the sizes they add and the woven triangle list (on first use).
+    private readonly mAntialiasLoops: Int32Array[];
+    private readonly mSkirtVertexCount: number;
+    private readonly mSkirtIndexCount: number;
+    private mSkirtIndices: Int32Array<ArrayBuffer> | null = null;
 
     // expanded geometry, in the layout drawVertices wants
     private mVerts = new Float32Array(0);
@@ -67,8 +82,22 @@ export class AddMesh2D extends Operation implements VariableSupport {
         readonly mSrcColors: Int32Array,
         readonly mWidths: Int32Array,
         readonly mWidthPositions: Int32Array,
+        // Raw bits, as the other payloads: may be a NaN-boxed variable id.
+        readonly mAntialiasWidth: number = floatToRawIntBits(AddMesh2D.DEFAULT_ANTIALIAS_WIDTH),
     ) {
         super();
+        const uc = Math.max(1, mUCount);
+        const vc = Math.max(1, mVCount);
+        this.mAntialiasLoops = this.isAntialiased
+                && layoutVertexCount(mLayout, uc, vc) <= G.MAX_MESH_2D_GRID
+            ? G.antialiasLoops(mLayout, uc, vc) : [];
+        this.mSkirtVertexCount = G.antialiasVertexCount(this.mAntialiasLoops);
+        this.mSkirtIndexCount = G.antialiasIndexCount(this.mAntialiasLoops);
+    }
+
+    /** Never a spline strip, which has no colours to fade. */
+    private get isAntialiased(): boolean {
+        return (this.mFlags & AddMesh2D.FLAG_ANTIALIAS) !== 0 && !this.isSplineStrip;
     }
 
     // Players read documents; they never write them. Stubbed as elsewhere in this tree.
@@ -99,6 +128,9 @@ export class AddMesh2D extends Operation implements VariableSupport {
             for (let i = 0; i < arr.length; i++) {
                 if (isNaNBits(arr[i])) context.listensTo(idFromBits(arr[i]), this);
             }
+        }
+        if (this.isAntialiased && isNaNBits(this.mAntialiasWidth)) {
+            context.listensTo(idFromBits(this.mAntialiasWidth), this);
         }
     }
     markDirty(): void { this.mMeshDirty = true; }
@@ -146,15 +178,51 @@ export class AddMesh2D extends Operation implements VariableSupport {
             ? new Float32Array(this.mSrcUv) : new Float32Array(0);
         this.mColors = this.mSrcColors.length === vertexCount
             ? new Int32Array(this.mSrcColors) : new Int32Array(0);
-        this.mIndices = new Int32Array(this.mSrcIndices);
+        // The wire format guarantees these for an antialiased mesh; without them the mesh is
+        // drawn without a skirt rather than with a wrong one.
+        const skirt = this.mSkirtVertexCount > 0
+            && this.mSrcColors.length === vertexCount
+            && G.vertexCount(this.mLayout, this.mUCount, this.mVCount) === vertexCount;
+        if (!skirt) {
+            this.mIndices = new Int32Array(this.mSrcIndices);
+            return;
+        }
+        this.mVerts = grow(verts, (vertexCount + this.mSkirtVertexCount) * 2);
+        if (this.mUv.length > 0) {
+            this.mUv = grow(this.mUv, (vertexCount + this.mSkirtVertexCount) * 2);
+        }
+        this.mColors = growInt(this.mColors, vertexCount + this.mSkirtVertexCount);
+        this.appendSkirt(context, vertexCount);
+        this.mIndices = this.skirtIndices(vertexCount);
+    }
+
+    private appendSkirt(context: RemoteContext, bodyVertexCount: number): void {
+        G.appendAntialiasSkirt(this.mLayout, Math.max(1, this.mUCount), Math.max(1, this.mVCount),
+                               this.mAntialiasLoops, this.val(context, this.mAntialiasWidth),
+                               this.mVerts, this.mUv, this.mColors, bodyVertexCount);
+    }
+
+    /** The body's triangles with the skirt's woven in; topology only, so worked out once. */
+    private skirtIndices(bodyVertexCount: number): Int32Array<ArrayBuffer> {
+        if (this.mSkirtIndices === null) {
+            const body = this.mType === G.TYPE_EXPRESSION || this.isSplineStrip
+                ? G.generateIndices(this.mLayout, Math.max(1, this.mUCount),
+                                    Math.max(1, this.mVCount))
+                : this.mSrcIndices;
+            this.mSkirtIndices = G.antialiasIndices(body, this.mAntialiasLoops, bodyVertexCount);
+        }
+        return this.mSkirtIndices;
     }
 
     private roundCapColumns(): number {
         if (this.mType !== G.TYPE_SPLINE_ROUND_STRIP) return 0;
-        const cap = this.mFlags;
-        if (cap <= 0) return 0;
+        // Masked, so FLAG_ANTIALIAS in the same word is not read as cap columns.
+        const cap = this.mFlags & AddMesh2D.CAP_SEGMENTS_MASK;
+        if (cap < 1) return 0;
         // flags arrives from the wire; leave at least one body column.
-        return Math.max(0, Math.min(cap, Math.trunc((this.mUCount - 2) / 2)));
+        const columns = this.mUCount - 1;
+        if (columns < 3) return 0;
+        return Math.min(cap, Math.trunc((columns - 1) / 2));
     }
 
     private evaluate(context: RemoteContext, group: number, u: number, v: number,
@@ -228,9 +296,6 @@ export class AddMesh2D extends Operation implements VariableSupport {
         const vc = Math.max(1, this.mVCount);
         const total = G.vertexCount(this.mLayout, uc, vc);
         if (total <= 0 || total > G.MAX_MESH_2D_VERTICES) return;
-
-        const verts = new Float32Array(total * 2);
-        const uv = new Float32Array(total * 2);
         const texU = this.mExpressions[G.EXP_TEX_U];
         const texV = this.mExpressions[G.EXP_TEX_V];
         const hasTex = (texU ? texU.length : 0) > 0 || (texV ? texV.length : 0) > 0;
@@ -240,7 +305,12 @@ export class AddMesh2D extends Operation implements VariableSupport {
         const cb = this.mExpressions[G.EXP_COLOR_B];
         const hasColor = (ca ? ca.length : 0) > 0 || (cr ? cr.length : 0) > 0
                       || (cg ? cg.length : 0) > 0 || (cb ? cb.length : 0) > 0;
-        const colors = hasColor ? new Int32Array(total) : new Int32Array(0);
+        // As for the literal types: the skirt is its colours, so without them there is none.
+        const skirt = this.mSkirtVertexCount > 0 && hasColor;
+        const all = total + (skirt ? this.mSkirtVertexCount : 0);
+        const verts = new Float32Array(all * 2);
+        const uv = new Float32Array(all * 2);
+        const colors = hasColor ? new Int32Array(all) : new Int32Array(0);
 
         let points = 0;
         if (this.mLayout === G.LAYOUT_PATH_STRIP) {
@@ -303,7 +373,12 @@ export class AddMesh2D extends Operation implements VariableSupport {
         this.mVerts = verts;
         this.mUv = uv;
         this.mColors = colors;
-        this.mIndices = G.generateIndices(this.mLayout, uc, vc);
+        if (skirt) {
+            this.appendSkirt(context, total);
+            this.mIndices = this.skirtIndices(total);
+        } else {
+            this.mIndices = G.generateIndices(this.mLayout, uc, vc);
+        }
     }
 
     static read(buffer: WireBuffer, operations: Operation[]): void {
@@ -367,9 +442,76 @@ export class AddMesh2D extends Operation implements VariableSupport {
             for (let g = 0; g < G.EXPRESSION_GROUPS; g++) expressions.push(new Int32Array(0));
         }
 
+        let antialiasWidth = floatToRawIntBits(AddMesh2D.DEFAULT_ANTIALIAS_WIDTH);
+        if ((flags & AddMesh2D.FLAG_ANTIALIAS) !== 0) {
+            antialiasWidth = buffer.readNanIdBits();
+            validateAntialias(type, layout, uCount, vCount, expressions,
+                              srcVerts.length / 2, srcColors.length, antialiasWidth);
+        }
+
         operations.push(new AddMesh2D(meshId, type, layout, uCount, vCount, flags, aux,
                                       expressions, srcIndices, srcVerts, srcUv, srcColors,
-                                      widths, widthPositions));
+                                      widths, widthPositions, antialiasWidth));
+    }
+}
+
+/** A copy of `a` at length `n`, its tail zeroed: room for the skirt after the body. */
+function grow(a: Float32Array, n: number): Float32Array<ArrayBuffer> {
+    const out = new Float32Array(n);
+    out.set(a.subarray(0, Math.min(a.length, n)));
+    return out;
+}
+function growInt(a: Int32Array, n: number): Int32Array<ArrayBuffer> {
+    const out = new Int32Array(n);
+    out.set(a.subarray(0, Math.min(a.length, n)));
+    return out;
+}
+
+/** Vertices a layout gives these counts, guarded against a corrupt header wrapping round. */
+function layoutVertexCount(layout: number, uCount: number, vCount: number): number {
+    return layout === G.LAYOUT_FAN ? uCount + 1 : uCount * vCount;
+}
+
+/**
+ * Reject a FLAG_ANTIALIAS mesh whose skirt cannot be built, as the reference does on read: the
+ * skirt fades the vertex colours, so they must be there, and it grows from the boundary the
+ * layout describes, so the layout must describe every vertex.
+ */
+function validateAntialias(type: number, layout: number, uCount: number, vCount: number,
+                           expressions: Int32Array[], vertexCount: number, colorCount: number,
+                           widthBits: number): void {
+    if (type === G.TYPE_PATH_SPLINE_STRIP || type === G.TYPE_SPLINE_ROUND_STRIP) {
+        throw new Error('Mesh2D spline strips have no colours to antialias with');
+    }
+    // A NaN is a variable, only known at playback.
+    if (!isNaNBits(widthBits)) {
+        const w = intBitsToFloat(widthBits);
+        if (!(w >= 0 && w < Infinity)) {
+            throw new Error('Mesh2D antialias width must be finite and not negative: ' + w);
+        }
+    }
+    if (type === G.TYPE_EXPRESSION) {
+        let hasColor = false;
+        for (let g = G.EXP_COLOR_A; g <= G.EXP_COLOR_B && g < expressions.length; g++) {
+            if (expressions[g].length > 0) hasColor = true;
+        }
+        if (!hasColor) throw new Error('Mesh2D antialiasing needs vertex colours; set a colour channel');
+        const u = Math.max(1, uCount);
+        const v = Math.max(1, vCount);
+        if (layoutVertexCount(layout, u, v) > G.MAX_MESH_2D_GRID
+            || G.antialiasLoops(layout, u, v).length === 0) {
+            throw new Error('Mesh2D grid ' + uCount + 'x' + vCount + ' has no edges to antialias');
+        }
+        return;
+    }
+    if (colorCount !== vertexCount) {
+        throw new Error('Mesh2D antialiasing needs one colour per vertex, got ' + colorCount
+                        + ' for ' + vertexCount + ' vertices');
+    }
+    if (layoutVertexCount(layout, uCount, vCount) !== vertexCount
+        || G.antialiasLoops(layout, uCount, vCount).length === 0) {
+        throw new Error('Mesh2D antialiasing needs a layout that describes every vertex, but '
+                        + uCount + 'x' + vCount + ' does not match ' + vertexCount + ' vertices');
     }
 }
 

@@ -62,15 +62,20 @@ export function indexCount(layout: number, uCount: number, vCount: number): numb
 
 // A wrapping layout divides by uCount so the sample after the last is the first; a
 // non-wrapping one divides by uCount-1 so the domain is closed at both ends.
+// The domain and the default positions are computed in float32, as the reference computes
+// them: in double, cos(u * 2pi) at a quarter turn is -4.8e-8 where the reference has -4.4e-8,
+// and an antialiasing skirt grown beside such a point magnifies that into a visible 3e-4.
+const fr = Math.fround;
+
 export function domainU(layout: number, i: number, uCount: number): number {
     if (uCount <= 1) return 0;
-    if (wrapsU(layout)) return i / uCount;
-    return i / (uCount - 1);
+    if (wrapsU(layout)) return fr(i / uCount);
+    return fr(i / (uCount - 1));
 }
 
 export function domainV(j: number, vCount: number): number {
     if (vCount <= 1) return 0;
-    return j / (vCount - 1);
+    return fr(j / (vCount - 1));
 }
 
 export function generateIndices(layout: number, uCount: number,
@@ -102,6 +107,284 @@ export function generateIndices(layout: number, uCount: number,
     return out;
 }
 
+// ── antialiasing skirt (AddMesh2D FLAG_ANTIALIAS) ─────────────────────────────────────────
+//
+// drawVertices does not antialias triangle edges, so a mesh stops at a hard, stepped edge. The
+// skirt is a band of vertices just outside each boundary loop that repeat their neighbour's
+// colour and uv at alpha 0, so the edge fades out over `width` instead. Ported from androidx
+// Mesh2DGenerator (2026-11): which vertices, in which order, and which triangles join them are
+// part of the contract, since MatrixFromMesh2D and the painter's order both depend on them.
+
+/** The furthest a skirt vertex is pushed out at a corner, as a multiple of the width: SVG's
+ * default miter limit. */
+export const ANTIALIAS_MAX_MITER = 4;
+
+/**
+ * The boundary loops of a layout, each a closed ring of body vertex indices listed in the
+ * direction the body's own triangles run along it. A grid-wired layout has one loop around all
+ * four sides; polar and ring have two (first row, last row); a fan has one, its rim. Empty when
+ * the counts describe no area.
+ */
+export function antialiasLoops(layout: number, uCount: number, vCount: number): Int32Array[] {
+    switch (layout) {
+        case LAYOUT_FAN: {
+            if (uCount < 3) return [];
+            const rim = new Int32Array(uCount);
+            for (let i = 0; i < uCount; i++) rim[i] = 1 + i;
+            return [rim];
+        }
+        case LAYOUT_POLAR:
+        case LAYOUT_RING: {
+            if (uCount < 3 || vCount < 2) return [];
+            // The body's triangles run along the first row backwards and the last forwards.
+            const first = new Int32Array(uCount);
+            const last = new Int32Array(uCount);
+            const lastRow = (vCount - 1) * uCount;
+            for (let i = 0; i < uCount; i++) {
+                first[i] = (uCount - i) % uCount;
+                last[i] = lastRow + i;
+            }
+            return [first, last];
+        }
+        default: {
+            // Anything else is wired as a grid by generateIndices, so it is bounded as one.
+            if (uCount < 2 || vCount < 2) return [];
+            const loop = new Int32Array(2 * (uCount + vCount) - 4);
+            let k = 0;
+            // Down the first column, along the last row, up the last column, back along row 0.
+            for (let j = 0; j < vCount; j++) loop[k++] = j * uCount;
+            for (let i = 1; i < uCount; i++) loop[k++] = (vCount - 1) * uCount + i;
+            for (let j = vCount - 2; j >= 0; j--) loop[k++] = j * uCount + uCount - 1;
+            for (let i = uCount - 2; i >= 1; i--) loop[k++] = i;
+            return [loop];
+        }
+    }
+}
+
+/** The vertices a skirt around `loops` adds: one per loop vertex. */
+export function antialiasVertexCount(loops: Int32Array[]): number {
+    let count = 0;
+    for (const loop of loops) count += loop.length;
+    return count;
+}
+
+/** The indices a skirt around `loops` adds: two triangles per loop edge. */
+export function antialiasIndexCount(loops: Int32Array[]): number {
+    return antialiasVertexCount(loops) * 6;
+}
+
+/**
+ * Grow the skirt into the tail of the arrays, after the first `bodyVertexCount` vertices; the
+ * arrays must already have room for it. A loop or body with no area gets a skirt of zero width:
+ * it keeps its vertex slots, so the sizes never depend on the geometry, but it draws nothing.
+ */
+export function appendAntialiasSkirt(layout: number, uCount: number, vCount: number,
+                                     loops: Int32Array[], width: number,
+                                     verts: Float32Array, uv: Float32Array, colors: Int32Array,
+                                     bodyVertexCount: number): void {
+    // NaN, an unresolved variable, fails the comparison and so collapses the skirt too.
+    const reach = width > 0 && width < Infinity ? width : 0;
+    let base = bodyVertexCount;
+    for (const loop of loops) {
+        const n = loop.length;
+        const normals = new Float32Array(2 * n);
+        const side = reach > 0 ? outwardSide(layout, uCount, vCount, loop, verts) : 0;
+        if (side !== 0 && edgeNormals(loop, verts, side, normals)) {
+            skirtPositions(loop, verts, reach, side, normals, base);
+        } else {
+            for (let e = 0; e < n; e++) {
+                verts[(base + e) * 2] = verts[loop[e] * 2];
+                verts[(base + e) * 2 + 1] = verts[loop[e] * 2 + 1];
+            }
+        }
+        for (let e = 0; e < n; e++) {
+            const a = loop[e];
+            const skirtA = base + e;
+            if (uv.length > 0) {
+                uv[skirtA * 2] = uv[a * 2];
+                uv[skirtA * 2 + 1] = uv[a * 2 + 1];
+            }
+            if (colors.length > 0) colors[skirtA] = colors[a] & 0x00ffffff;
+        }
+        base += n;
+    }
+}
+
+/**
+ * The body's triangles in their own order, each followed by the skirt along whichever of its
+ * edges lie on a loop, so a mesh that overlaps itself keeps its painter's order. A loop edge no
+ * triangle runs along (only a hand-built list has one) gets its skirt after everything else.
+ */
+export function antialiasIndices(bodyIndices: Int32Array, loops: Int32Array[],
+                                 bodyVertexCount: number): Int32Array<ArrayBuffer> {
+    const edgeCount = antialiasVertexCount(loops);
+    const out = new Int32Array(bodyIndices.length + edgeCount * 6);
+    // Each loop edge a -> b with the skirt vertices beyond them, found from a by way of the edge
+    // that leaves it. No vertex is on a loop twice.
+    const edges = new Int32Array(edgeCount * 4);
+    const leaving = new Int32Array(bodyVertexCount).fill(-1);
+    let edge = 0;
+    let base = bodyVertexCount;
+    for (const loop of loops) {
+        const n = loop.length;
+        for (let e = 0; e < n; e++) {
+            edges[edge * 4] = loop[e];
+            edges[edge * 4 + 1] = loop[(e + 1) % n];
+            edges[edge * 4 + 2] = base + e;
+            edges[edge * 4 + 3] = base + (e + 1) % n;
+            if (loop[e] >= 0 && loop[e] < bodyVertexCount) leaving[loop[e]] = edge;
+            edge++;
+        }
+        base += n;
+    }
+
+    const loopEdge = (a: number, b: number): number => {
+        if (a >= 0 && a < leaving.length) {
+            const e = leaving[a];
+            if (e >= 0 && edges[e * 4 + 1] === b) return e;
+        }
+        if (b >= 0 && b < leaving.length) {
+            const e = leaving[b];
+            if (e >= 0 && edges[e * 4 + 1] === a) return e;
+        }
+        return -1;
+    };
+    let k = 0;
+    const skirtTriangles = (e: number): void => {
+        const a = edges[e * 4], b = edges[e * 4 + 1];
+        const skirtA = edges[e * 4 + 2], skirtB = edges[e * 4 + 3];
+        // The body's triangle runs a -> b, so the skirt's runs b -> a: the same winding.
+        out[k++] = b; out[k++] = a; out[k++] = skirtA;
+        out[k++] = b; out[k++] = skirtA; out[k++] = skirtB;
+    };
+
+    const drawn = new Uint8Array(edgeCount);
+    const wholeTriangles = Math.trunc(bodyIndices.length / 3) * 3;
+    for (let t = 0; t < wholeTriangles; t += 3) {
+        out[k++] = bodyIndices[t];
+        out[k++] = bodyIndices[t + 1];
+        out[k++] = bodyIndices[t + 2];
+        for (let s = 0; s < 3; s++) {
+            const e = loopEdge(bodyIndices[t + s], bodyIndices[t + (s + 1) % 3]);
+            if (e >= 0 && !drawn[e]) { drawn[e] = 1; skirtTriangles(e); }
+        }
+    }
+    for (let e = 0; e < edgeCount; e++) if (!drawn[e]) skirtTriangles(e);
+    // Indices past the last whole triangle draw nothing, and stay last so they join nothing.
+    for (let i = wholeTriangles; i < bodyIndices.length; i++) out[k++] = bodyIndices[i];
+    return out;
+}
+
+/** A vertex one step into the body from a boundary vertex; only its side matters. */
+function antialiasInward(layout: number, uCount: number, vCount: number, vertex: number): number {
+    if (layout === LAYOUT_FAN) return 0;
+    const i = vertex % uCount;
+    const j = Math.trunc(vertex / uCount);
+    if (layout === LAYOUT_POLAR || layout === LAYOUT_RING) {
+        return (j === 0 ? 1 : vCount - 2) * uCount + i;
+    }
+    const ii = i === 0 ? 1 : (i === uCount - 1 ? uCount - 2 : i);
+    const jj = j === 0 ? 1 : (j === vCount - 1 ? vCount - 2 : j);
+    return jj * uCount + ii;
+}
+
+/** Which side of the loop the body is on, by a vote of every edge: 1 when outward is
+ * (dy, -dx), -1 for the reverse, 0 when the body beside the loop has no area. */
+function outwardSide(layout: number, uCount: number, vCount: number, loop: Int32Array,
+                     verts: Float32Array): number {
+    let vote = 0;
+    let magnitude = 0;
+    const n = loop.length;
+    for (let e = 0; e < n; e++) {
+        const a = loop[e];
+        const b = loop[(e + 1) % n];
+        const c = antialiasInward(layout, uCount, vCount, a);
+        const ax = verts[a * 2], ay = verts[a * 2 + 1];
+        const dx = verts[b * 2] - ax, dy = verts[b * 2 + 1] - ay;
+        const cx = verts[c * 2] - ax, cy = verts[c * 2 + 1] - ay;
+        vote += dx * cy - dy * cx;
+        magnitude += Math.hypot(dx, dy) * Math.hypot(cx, cy);
+    }
+    if (!(Math.abs(vote) > 1e-6 * magnitude)) return 0;
+    return vote > 0 ? 1 : -1;
+}
+
+/** Each loop edge's unit outward normal, zero for an edge with no length; false if no edge
+ * has any. */
+function edgeNormals(loop: Int32Array, verts: Float32Array, side: number,
+                     normals: Float32Array): boolean {
+    const n = loop.length;
+    let any = false;
+    for (let e = 0; e < n; e++) {
+        const a = loop[e];
+        const b = loop[(e + 1) % n];
+        // Float32 differences, as the reference takes them, so near-degenerate edges are judged
+        // the same way.
+        const dx = Math.fround(verts[b * 2] - verts[a * 2]);
+        const dy = Math.fround(verts[b * 2 + 1] - verts[a * 2 + 1]);
+        const length = Math.fround(Math.hypot(dx, dy));
+        if (length > DEGENERATE_EPSILON) {
+            normals[e * 2] = side * dy / length;
+            normals[e * 2 + 1] = -side * dx / length;
+            any = true;
+        } else {
+            normals[e * 2] = 0;
+            normals[e * 2 + 1] = 0;
+        }
+    }
+    return any;
+}
+
+function hasNormal(normals: Float32Array, edge: number): boolean {
+    return normals[edge * 2] !== 0 || normals[edge * 2 + 1] !== 0;
+}
+
+/**
+ * Place each skirt vertex on the mitred bisector of the nearest edges with length on either
+ * side. Two passes: the backward one parks the normal of the edge after each vertex in that
+ * vertex's skirt slot; the forward one combines it with the edge before and overwrites the slot.
+ */
+function skirtPositions(loop: Int32Array, verts: Float32Array, reach: number, side: number,
+                        normals: Float32Array, base: number): void {
+    const n = loop.length;
+    let next = 0;
+    while (!hasNormal(normals, next)) next++;
+    for (let k = n - 1; k >= 0; k--) {
+        if (hasNormal(normals, k)) next = k;
+        verts[(base + k) * 2] = normals[next * 2];
+        verts[(base + k) * 2 + 1] = normals[next * 2 + 1];
+    }
+
+    let previous = n - 1;
+    while (!hasNormal(normals, previous)) previous--;
+    const limit = ANTIALIAS_MAX_MITER * ANTIALIAS_MAX_MITER;
+    for (let k = 0; k < n; k++) {
+        if (k > 0 && hasNormal(normals, k - 1)) previous = k - 1;
+        const px = normals[previous * 2];
+        const py = normals[previous * 2 + 1];
+        const mx = px + verts[(base + k) * 2];
+        const my = py + verts[(base + k) * 2 + 1];
+        // |m| = 2cos(a/2) for unit normals a radians apart, so the miter 1/cos(a/2) is 2/|m|.
+        const lengthSquared = mx * mx + my * my;
+        let offsetX: number;
+        let offsetY: number;
+        if (lengthSquared < 1e-12) {
+            // The loop turns straight back on itself, as at a tip whose last edge was skipped:
+            // carry on past the tip along the edge that arrives there.
+            offsetX = -side * py * reach;
+            offsetY = side * px * reach;
+        } else {
+            let scale = 2 / lengthSquared;
+            if (lengthSquared * limit < 4) scale = ANTIALIAS_MAX_MITER / Math.sqrt(lengthSquared);
+            offsetX = mx * scale * reach;
+            offsetY = my * scale * reach;
+        }
+        const a = loop[k];
+        verts[(base + k) * 2] = verts[a * 2] + offsetX;
+        verts[(base + k) * 2 + 1] = verts[a * 2 + 1] + offsetY;
+    }
+}
+
 // Every default lives in the unit square or unit circle at the origin; the canvas matrix is
 // what places and sizes it. This is what makes `layout: polar` useful without the author
 // spending scarce expression tokens on trigonometry.
@@ -109,16 +392,16 @@ export function defaultPosition(layout: number, u: number, v: number, out: Float
     switch (layout) {
         case LAYOUT_POLAR:
         case LAYOUT_FAN: {
-            const angle = u * TWO_PI;
-            out[0] = v * Math.cos(angle);
-            out[1] = v * Math.sin(angle);
+            const angle = fr(u * TWO_PI);
+            out[0] = fr(v * fr(Math.cos(angle)));
+            out[1] = fr(v * fr(Math.sin(angle)));
             break;
         }
         case LAYOUT_RING: {
-            const angle = u * TWO_PI;
-            const radius = DEFAULT_RING_INNER_RADIUS + (1 - DEFAULT_RING_INNER_RADIUS) * v;
-            out[0] = radius * Math.cos(angle);
-            out[1] = radius * Math.sin(angle);
+            const angle = fr(u * TWO_PI);
+            const radius = fr(DEFAULT_RING_INNER_RADIUS + fr((1 - DEFAULT_RING_INNER_RADIUS) * v));
+            out[0] = fr(radius * fr(Math.cos(angle)));
+            out[1] = fr(radius * fr(Math.sin(angle)));
             break;
         }
         default:
@@ -403,7 +686,9 @@ export function sampleMeshPosition(layout: number, uCount: number, vCount: numbe
     const vc = verts.length / 2;
     if (vc === 0) { out[0] = 0; out[1] = 0; return; }
 
-    if (layout === LAYOUT_FAN && uCount >= 1 && vc === uCount + 1) {
+    // The layout's vertices may be followed by more: an antialiased mesh carries its skirt
+    // after the body, and the skirt is no part of the surface a matrix is read from.
+    if (layout === LAYOUT_FAN && uCount >= 1 && vc >= uCount + 1) {
         const uNorm = ((u % 1) + 1) % 1;
         const fu = uNorm * uCount;
         const i0 = Math.floor(fu) % uCount;
@@ -417,7 +702,7 @@ export function sampleMeshPosition(layout: number, uCount: number, vCount: numbe
         return;
     }
 
-    if (uCount >= 2 && vCount >= 2 && uCount * vCount === vc) {
+    if (uCount >= 2 && vCount >= 2 && uCount * vCount <= vc) {
         let i0: number, i1: number, tu: number;
         if (wrapsU(layout)) {
             const uNorm = ((u % 1) + 1) % 1;
@@ -536,7 +821,9 @@ export function buildMatrix(frame: Float32Array, flags: number, out: Float32Arra
 }
 
 export function clamp255(f: number): number {
-    const i = Math.trunc(f * 255 + 0.5);
+    // In float32, as the reference's (int) (f * 255f + 0.5f): in double, 0.9 packs to 229
+    // where the reference gets 230, so a channel on such a boundary came out one step dark.
+    const i = Math.trunc(Math.fround(Math.fround(Math.fround(f) * 255) + 0.5));
     return i < 0 ? 0 : (i > 255 ? 255 : i);
 }
 

@@ -11,6 +11,7 @@ import { DrawRoundRect } from './operations/DrawRoundRect';
 import { DrawArc } from './operations/DrawArc';
 import { DrawSector } from './operations/DrawSector';
 import { AddMesh2D, DrawMesh2D, MatrixFromMesh2D } from './operations/Mesh2D';
+import { BinaryData } from './operations/BinaryData';
 import { DrawPath } from './operations/DrawPath';
 import { DrawTweenPath } from './operations/DrawTweenPath';
 import { DrawContent } from './operations/DrawContent';
@@ -164,6 +165,7 @@ export class Operations {
         m.set(AddMesh2D.OP_CODE, AddMesh2D.read);
         m.set(DrawMesh2D.OP_CODE, DrawMesh2D.read);
         m.set(MatrixFromMesh2D.OP_CODE, MatrixFromMesh2D.read);
+        m.set(BinaryData.OP_CODE, BinaryData.read);
         m.set(DrawPath.OP_CODE, DrawPath.read);
         m.set(DrawTweenPath.OP_CODE, DrawTweenPath.read);
         m.set(DrawContent.OP_CODE, DrawContent.read);
