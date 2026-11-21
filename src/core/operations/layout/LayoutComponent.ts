@@ -13,7 +13,7 @@ import { WidthModifier, HeightModifier, PaddingModifier,
          DimensionConstraintsModifier,
          GraphicsLayerModifier, BackgroundModifier, BorderModifier,
          RoundedClipRectModifier, ClipRectModifier, OffsetModifier,
-         DrawContentModifier, VisibilityModifier, ClickModifier, MultiClickModifier, TextInputModifier,
+         DrawContentModifier, VisibilityModifier, ClickModifier, MultiClickModifier,
          TouchDownModifier, TouchUpModifier, TouchCancelModifier,
          ScrollModifier, MarqueeModifier, RippleModifier, AccessibilitySemantics } from './modifiers/ModifierOperations';
 import { LayoutComputeOperation } from './modifiers/LayoutComputeOperation';
@@ -162,9 +162,6 @@ export class LayoutComponent extends Component {
                 op.setComponent(this);
                 this.mComponentModifiers.push(op);
             } else if (op instanceof OffsetModifier) {
-                this.mComponentModifiers.push(op);
-            } else if (op instanceof TextInputModifier) {
-                // A ClickHandler too (Java TextInputModifierOperation): a click opens the editor.
                 this.mComponentModifiers.push(op);
             } else if (op instanceof ClickModifier || op instanceof MultiClickModifier) {
                 // Both are ClickHandlers in Java's ComponentModifiers. A MultiClickModifier
@@ -617,8 +614,6 @@ export class LayoutComponent extends Component {
                 paintContext.matrixTranslate(tx, ty);
             } else if (mod instanceof RippleModifier) {
                 mod.ripple.paint(paintContext, context, dw, dh);
-            } else if (mod instanceof TextInputModifier) {
-                mod.paintModifier(paintContext);
             } else {
                 mod.apply(context);
             }
@@ -814,8 +809,6 @@ export class LayoutComponent extends Component {
                 if (mod instanceof ClickModifier || mod instanceof MultiClickModifier) {
                     // The component's own coordinates (where the click's ripple starts).
                     if (mod.onClick(context, doc, x - this.mX, y - this.mY)) handled = true;
-                } else if (mod instanceof TextInputModifier) {
-                    if (mod.onClickComponent(context, this)) handled = true;
                 }
             }
             return handled;

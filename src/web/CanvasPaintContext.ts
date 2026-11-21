@@ -1686,7 +1686,9 @@ export class CanvasPaintContext extends PaintContext {
             return;
         }
         const text = this.textCache.get(textId);
-        if (!text) { bounds.fill(0); return; }
+        // Only a missing string measures nothing: an empty one is a line as tall as the font
+        // under TEXT_MEASURE_FONT_HEIGHT (AndroidPaintContext), so an empty field keeps its height.
+        if (text === undefined || text === null) { bounds.fill(0); return; }
         const s = start >= 0 ? start : 0;
         const e = end >= 0 ? Math.min(end, text.length) : text.length;
         const substr = text.substring(s, e);

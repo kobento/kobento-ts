@@ -2,7 +2,6 @@
 // Port of Java CoreText.java with full measure/layout/paint implementation.
 
 import { LayoutManager } from './LayoutManager';
-import { TextInputModifier } from '../modifiers/ModifierOperations';
 import { PaintBundle } from '../../paint/PaintBundle';
 import { isNaNBits, idFromBits, intBitsToFloat, isVariableBits, floatToRawIntBits } from '../../Utils';
 import type { Operation } from '../../../Operation';
@@ -551,15 +550,7 @@ export class CoreText extends LayoutManager implements VariableSupport {
         const contentW = this.mWidth - this.mPaddingLeft - this.mPaddingRight;
         const contentH = this.mHeight - this.mPaddingTop - this.mPaddingBottom;
 
-        // While a host editor is shown over the component, it shows the text (androidx CL 4451608).
-        const drawText = !this.isEditing();
-        if (drawText && length === 0) {
-            // An empty editable text shows its hint instead.
-            TextInputModifier.find(this)?.paintHint(paintContext, this.mPaint, this.mColorValue, contentW, this.mTextAlignValue);
-        }
-        if (!drawText) {
-            // (nothing: the editor shows it)
-        } else if (this.mComputedTextLayout) {
+        if (this.mComputedTextLayout) {
             if (this.mOverflow !== OVERFLOW_VISIBLE) {
                 paintContext.save();
                 paintContext.clipRect(0, 0, contentW, contentH);
@@ -568,7 +559,7 @@ export class CoreText extends LayoutManager implements VariableSupport {
             } else {
                 paintContext.drawComplexText(this.mComputedTextLayout, contentW);
             }
-        } else if (length > 0) {
+        } else {
             let px = this.mTextX;
             switch (this.mTextAlignValue) {
                 case TEXT_ALIGN_CENTER:
@@ -598,7 +589,10 @@ export class CoreText extends LayoutManager implements VariableSupport {
         paintContext.restore();
     }
 
-    // The text's style, for a host editor shown over it (Java CoreText getters).
+    // The text's style, for a host editor shown over it and the hint drawn in its place
+    // (Java CoreText getters, read by TextInputLayout).
+    getTextId(): number { return this.mTextId; }
+    getFontStyle(): number { return this.mFontStyle; }
     getFontSizeValue(): number { return this.mMeasureFontSize; }
     getColorValue(): number { return this.mColorValue; }
     getFontWeightValue(): number { return this.mFontWeightValue; }

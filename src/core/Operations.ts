@@ -57,6 +57,7 @@ import { RootLayoutComponent } from './operations/layout/RootLayoutComponent';
 import { LayoutComponentContent } from './operations/layout/LayoutComponentContent';
 import { CanvasContent } from './operations/layout/CanvasContent';
 import { BoxLayout } from './operations/layout/managers/BoxLayout';
+import { TextInputLayout } from './operations/layout/managers/TextInputLayout';
 import { RowLayout } from './operations/layout/managers/RowLayout';
 import { ColumnLayout } from './operations/layout/managers/ColumnLayout';
 import { CanvasLayout } from './operations/layout/managers/CanvasLayout';
@@ -64,7 +65,7 @@ import {
     WidthModifier, HeightModifier, WidthInModifier, HeightInModifier,
     CollapsiblePriorityModifier, BackgroundModifier, BorderModifier,
     PaddingModifier, RoundedClipRectModifier, ClipRectModifier,
-    ClickModifier, MultiClickModifier, TextInputModifier, DimensionConstraintsModifier,
+    ClickModifier, MultiClickModifier, DimensionConstraintsModifier,
     TouchDownModifier, TouchUpModifier, TouchCancelModifier,
     VisibilityModifier, OffsetModifier, ZIndexModifier, GraphicsLayerModifier,
     ScrollModifier, MarqueeModifier, RippleModifier, DrawContentModifier,
@@ -225,6 +226,7 @@ export class Operations {
         m.set(LayoutComponentContent.OP_CODE, LayoutComponentContent.read);
         m.set(CanvasContent.OP_CODE, CanvasContent.read);
         m.set(BoxLayout.OP_CODE, BoxLayout.read);
+        m.set(TextInputLayout.OP_CODE, TextInputLayout.read);
         m.set(RowLayout.OP_CODE, RowLayout.read);
         m.set(ColumnLayout.OP_CODE, ColumnLayout.read);
         m.set(CanvasLayout.OP_CODE, CanvasLayout.read);
@@ -243,7 +245,6 @@ export class Operations {
         m.set(ClipRectModifier.OP_CODE, ClipRectModifier.read);
         m.set(ClickModifier.OP_CODE, ClickModifier.read);
         m.set(MultiClickModifier.OP_CODE, MultiClickModifier.read);
-        m.set(TextInputModifier.OP_CODE, TextInputModifier.read);
         m.set(DimensionConstraintsModifier.OP_CODE, DimensionConstraintsModifier.read);
         m.set(TouchDownModifier.OP_CODE, TouchDownModifier.read);
         m.set(TouchUpModifier.OP_CODE, TouchUpModifier.read);

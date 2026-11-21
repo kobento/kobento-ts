@@ -85,9 +85,9 @@ export class RcdPlayer {
      */
     private viewport: { width: number; height: number } | null = null;
     /**
-     * Text input (MODIFIER_TEXT_INPUT): an editor over a component whose string is editable,
+     * Text input (LAYOUT_TEXT_INPUT): an editor over a text input layout's string,
      * on a real page only (not headless, where nothing can type). setTextInputEnabled(false)
-     * leaves the modifier inert, the text shown as is.
+     * leaves the layout a plain box, the text shown as is.
      */
     private textInput: WebTextInputSupport | null =
         typeof HTMLInputElement !== 'undefined' && typeof document !== 'undefined' && !!document.body

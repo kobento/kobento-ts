@@ -1,0 +1,21 @@
+{ "header": { "apiLevel": 7, "width": 300, "height": 240, "profiles": 513 },
+  "resources": { "variables": {
+      "name": { "type": "string", "value": "", "export": true },
+      "email": { "type": "string", "value": "", "export": true },
+      "city": { "type": "string", "value": "Paris", "export": true },
+      "code": { "type": "string", "value": "", "export": true } } },
+  "root": { "column": { "modifiers": ["fillMaxSize", { "background": "#FF000000" }], "children": [
+    { "editableText": { "text": "@name", "hint": "Your name", "color": "#FFFFFFFF", "fontSize": 20,
+        "keyboardType": "text", "capitalization": "words", "contentType": "personName",
+        "modifiers": ["fillMaxWidth", { "height": 60 }, { "padding": [10, 16] }] } },
+    { "textInput": { "text": "@email", "hint": "Email", "keyboardType": "email", "imeAction": "next",
+        "modifiers": ["fillMaxWidth", { "height": 60 }], "children": [
+          { "row": { "modifiers": ["fillMaxSize", { "padding": [10, 16] }], "children": [
+            { "box": { "modifiers": [{ "size": [20, 20] }, { "background": "#FF0000FF" }] } },
+            { "text": { "value": "@email", "color": "#FFFFFFFF", "fontSize": 20, "modifiers": [{ "weight": 1 }, { "padding": [8, 0] }] } } ] } } ] } },
+    { "row": { "modifiers": ["fillMaxWidth", { "height": 60 }], "children": [
+      { "text": { "value": "@city", "color": "#FFFFFFFF", "fontSize": 20,
+          "modifiers": [{ "weight": 1 }, { "padding": [10, 16] }, { "textInput": { "text": "@city", "hint": "City", "keyboard": "text" } }] } } ] } },
+    { "textInput": { "text": "@code", "hint": "Code", "filter": "digits", "keyboardType": "number",
+        "modifiers": ["fillMaxWidth", { "height": 60 }, { "background": "#FFFFFFFF" }, { "padding": [10, 10] }], "children": [
+          { "box": { "modifiers": [{ "size": [4, 4] }] } } ] } } ] } } }

@@ -1,11 +1,11 @@
-// The web player's text input (androidx CL 4445990, the View player's AndroidTextInputSupport
-// on the web): an <input> (single line) or <textarea> placed over the edited component, styled
-// from its text, writing edits back into the document's string on every keystroke (or on Enter
-// with FLAG_COMMIT_ON_DONE). It is dismissed on Enter in a single-line field, on Escape, when it
+// The web player's text input (the View player's AndroidTextInputSupport on the web): an <input>
+// (single line) or <textarea> placed over a TextInputLayout's bound text (or the whole layout when
+// it has none), styled from that text, writing edits back into the document's string on every
+// keystroke (or on closing with FLAG_COMMIT_ON_DONE). It is dismissed on Enter in a single-line field, on Escape, when it
 // loses focus (a click elsewhere) or when the document goes away.
 
 import type { TextInputSession, TextInputSupport } from '../core/TextInput';
-import { TextInputModifier } from '../core/operations/layout/modifiers/ModifierOperations';
+import { TextInputLayout } from '../core/operations/layout/managers/TextInputLayout';
 
 /** Maps document pixels to page (CSS, viewport) pixels: the player knows its canvas and transform. */
 export interface DocumentToPage {
@@ -17,7 +17,7 @@ export interface DocumentToPage {
     repaint(): void;
 }
 
-const T = TextInputModifier;
+const T = TextInputLayout;
 
 export class WebTextInputSupport implements TextInputSupport {
     private editor: HTMLInputElement | HTMLTextAreaElement | null = null;
@@ -33,8 +33,9 @@ export class WebTextInputSupport implements TextInputSupport {
     startTextInput(session: TextInputSession): void {
         this.dismiss(true);
         this.session = session;
-        const op = session.getOperation();
-        const single = op.hasFlag(T.FLAG_SINGLE_LINE);
+        const op = session.getLayout();
+        // A password keyboard makes the field secure, which is single line.
+        const single = op.hasInputFlag(T.FLAG_SINGLE_LINE) || op.isPassword();
         const editor = document.createElement(single ? 'input' : 'textarea');
         this.editor = editor;
         configure(editor, op);
@@ -52,7 +53,7 @@ export class WebTextInputSupport implements TextInputSupport {
                 editor.value = clean;
                 editor.setSelectionRange(at, at);
             }
-            if (this.session === session && session.isActive() && !op.hasFlag(T.FLAG_COMMIT_ON_DONE)) {
+            if (this.session === session && session.isActive() && !op.hasInputFlag(T.FLAG_COMMIT_ON_DONE)) {
                 session.setText(editor.value);
                 this.page.repaint();
             }
@@ -114,7 +115,7 @@ export class WebTextInputSupport implements TextInputSupport {
         editor?.remove();
     }
 
-    /** The editor over the component's bounds, fixed to the viewport. */
+    /** The editor over the session's bounds (the text, else the layout), fixed to the viewport. */
     private place(session: TextInputSession): void {
         const editor = this.editor;
         if (!editor) return;
@@ -126,33 +127,42 @@ export class WebTextInputSupport implements TextInputSupport {
         });
     }
 
-    /** Matches the editor's text to the component's: size, colour, weight, alignment, padding. */
+    /**
+     * Matches the editor's text to the bound text's: size, colour, weight, style, alignment,
+     * padding. Without a bound text the editor covers the layout, inside its padding, in the
+     * default style.
+     */
     private style(editor: HTMLElement, session: TextInputSession): void {
         const s = this.page.scale();
-        const c = session.getComponent() as any;
+        const text = session.getTextComponent();
+        const c = (text ?? session.getLayout()) as any;
         const css: Record<string, string> = {
             position: 'fixed', zIndex: '2147483646', margin: '0', border: '0', outline: 'none',
             background: 'transparent', boxSizing: 'border-box', resize: 'none', overflow: 'hidden',
             fontFamily: 'sans-serif', lineHeight: 'normal',
             padding: `${(c.mPaddingTop ?? 0) * s}px ${(c.mPaddingRight ?? 0) * s}px ${(c.mPaddingBottom ?? 0) * s}px ${(c.mPaddingLeft ?? 0) * s}px`,
         };
-        if (typeof c.getFontSizeValue === 'function') {
-            const size = c.getFontSizeValue();
+        if (text) {
+            const size = text.getFontSizeValue();
             if (size > 0) css.fontSize = `${size * s}px`;
-            const color = c.getColorValue() | 0;
+            const color = text.getColorValue() | 0;
             css.color = argb(color);
             css.caretColor = argb(color);
-            css.fontWeight = String(Math.round(c.getFontWeightValue() || 400));
-            const align = c.getTextAlignValue();
+            css.fontWeight = String(Math.round(text.getFontWeightValue() || 400));
+            if (text.getFontStyle() === 1) css.fontStyle = 'italic';
+            const align = text.getTextAlignValue();
             css.textAlign = align === 3 ? 'center' : align === 2 || align === 6 ? 'right' : 'left';
+        } else {
+            css.fontSize = `${36 * s}px`;   // TextStyle.DEFAULT_FONT_SIZE
+            css.color = 'rgb(0, 0, 0)';
         }
         Object.assign(editor.style, css);
-        editor.setAttribute('data-rc-text-input', String(session.getOperation().getTextId()));
+        editor.setAttribute('data-rc-text-input', String(session.getLayout().getTextId()));
     }
 }
 
-/** The modifier's keyboard type, IME action, flags and max length as input attributes. */
-function configure(editor: HTMLInputElement | HTMLTextAreaElement, op: TextInputModifier): void {
+/** The layout's keyboard type, IME action, flags, max length and content type as input attributes. */
+function configure(editor: HTMLInputElement | HTMLTextAreaElement, op: TextInputLayout): void {
     const input = editor instanceof HTMLInputElement ? editor : null;
     let inputMode = '';
     switch (op.getKeyboardType()) {
@@ -168,19 +178,38 @@ function configure(editor: HTMLInputElement | HTMLTextAreaElement, op: TextInput
     if (inputMode) editor.inputMode = inputMode;
     const hint = ({ [T.IME_ACTION_GO]: 'go', [T.IME_ACTION_SEARCH]: 'search', [T.IME_ACTION_SEND]: 'send',
         [T.IME_ACTION_PREVIOUS]: 'previous', [T.IME_ACTION_NEXT]: 'next', [T.IME_ACTION_DONE]: 'done' } as Record<number, string>)[op.getImeAction()]
-        ?? (op.hasFlag(T.FLAG_SINGLE_LINE) ? 'done' : 'enter');
+        ?? (editor instanceof HTMLInputElement ? 'done' : 'enter');
     editor.setAttribute('enterkeyhint', hint);
-    const correct = op.hasFlag(T.FLAG_AUTO_CORRECT);
+    // A secure field takes no suggestions (and the browser offers no copy of a password input).
+    const correct = op.hasInputFlag(T.FLAG_AUTO_CORRECT) && !op.isPassword();
     editor.setAttribute('autocorrect', correct ? 'on' : 'off');
     editor.spellcheck = correct;
-    editor.setAttribute('autocapitalize', op.hasFlag(T.FLAG_CAPITALIZE_CHARACTERS) ? 'characters'
-        : op.hasFlag(T.FLAG_CAPITALIZE_WORDS) ? 'words' : op.hasFlag(T.FLAG_CAPITALIZE_SENTENCES) ? 'sentences' : 'off');
-    editor.autocomplete = 'off';
+    editor.setAttribute('autocapitalize', op.hasInputFlag(T.FLAG_CAPITALIZE_CHARACTERS) ? 'characters'
+        : op.hasInputFlag(T.FLAG_CAPITALIZE_WORDS) ? 'words' : op.hasInputFlag(T.FLAG_CAPITALIZE_SENTENCES) ? 'sentences' : 'off');
+    editor.autocomplete = (AUTOCOMPLETE[op.getContentType()] ?? 'off') as AutoFill;
     if (op.getMaxLength() > 0) editor.maxLength = op.getMaxLength();
 }
 
-/** The text with the characters the modifier's filter refuses removed, cut to its max length. */
-export function filtered(text: string, op: TextInputModifier): string {
+/** The content types as HTML autocomplete tokens (CONTENT_TYPE_NONE: off). */
+const AUTOCOMPLETE: Record<number, string> = {
+    [T.CONTENT_TYPE_PERSON_NAME]: 'name',
+    [T.CONTENT_TYPE_PERSON_FIRST_NAME]: 'given-name',
+    [T.CONTENT_TYPE_PERSON_LAST_NAME]: 'family-name',
+    [T.CONTENT_TYPE_EMAIL_ADDRESS]: 'email',
+    [T.CONTENT_TYPE_PHONE_NUMBER]: 'tel',
+    [T.CONTENT_TYPE_USERNAME]: 'username',
+    [T.CONTENT_TYPE_PASSWORD]: 'current-password',
+    [T.CONTENT_TYPE_NEW_PASSWORD]: 'new-password',
+    [T.CONTENT_TYPE_ONE_TIME_CODE]: 'one-time-code',
+    [T.CONTENT_TYPE_POSTAL_ADDRESS]: 'street-address',
+    [T.CONTENT_TYPE_POSTAL_CODE]: 'postal-code',
+    [T.CONTENT_TYPE_CREDIT_CARD_NUMBER]: 'cc-number',
+    [T.CONTENT_TYPE_CREDIT_CARD_EXPIRATION_DATE]: 'cc-exp',
+    [T.CONTENT_TYPE_CREDIT_CARD_SECURITY_CODE]: 'cc-csc',
+};
+
+/** The text with the characters the layout's filter refuses removed, cut to its max length. */
+export function filtered(text: string, op: TextInputLayout): string {
     let out = text;
     switch (op.getFilter()) {
         case T.FILTER_DIGITS: out = out.replace(/[^0-9]/g, ''); break;
@@ -188,7 +217,7 @@ export function filtered(text: string, op: TextInputModifier): string {
         case T.FILTER_HEXADECIMAL: out = out.replace(/[^0-9a-fA-F]/g, ''); break;
         case T.FILTER_ALPHANUMERIC: out = out.replace(/[^\p{L}\p{N}]/gu, ''); break;
     }
-    if (op.hasFlag(T.FLAG_SINGLE_LINE)) out = out.replace(/[\r\n]+/g, ' ');
+    if (op.hasInputFlag(T.FLAG_SINGLE_LINE) || op.isPassword()) out = out.replace(/[\r\n]+/g, ' ');
     if (op.getMaxLength() > 0 && out.length > op.getMaxLength()) out = out.slice(0, op.getMaxLength());
     return out;
 }
