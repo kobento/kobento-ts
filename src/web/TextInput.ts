@@ -142,9 +142,18 @@ export class WebTextInputSupport implements TextInputSupport {
             fontFamily: 'sans-serif', lineHeight: 'normal',
             padding: `${(c.mPaddingTop ?? 0) * s}px ${(c.mPaddingRight ?? 0) * s}px ${(c.mPaddingBottom ?? 0) * s}px ${(c.mPaddingLeft ?? 0) * s}px`,
         };
+        ensurePlaceholderStyle();
         if (text) {
             const size = text.getFontSizeValue();
             if (size > 0) css.fontSize = `${size * s}px`;
+            // Lines as far apart as the canvas lays them out (CanvasPaintContext.layoutComplexText:
+            // the size times the multiplier, 1.2 by default), so a multi-line field's first line
+            // and caret land where the text and its hint were drawn. A single-line input centres
+            // its line in a box one font height tall, which is already where the canvas puts it.
+            if (editor instanceof HTMLTextAreaElement && size > 0) {
+                const mult = (text as any).mLineHeightMultiplier;
+                css.lineHeight = `${size * (mult > 0 && mult !== 1 ? mult : 1.2) * s}px`;
+            }
             const color = text.getColorValue() | 0;
             css.color = argb(color);
             css.caretColor = argb(color);
@@ -159,6 +168,19 @@ export class WebTextInputSupport implements TextInputSupport {
         Object.assign(editor.style, css);
         editor.setAttribute('data-rc-text-input', String(session.getLayout().getTextId()));
     }
+}
+
+/**
+ * The placeholder as the canvas draws the hint: the text's own colour at 45% (TextInputLayout
+ * HINT_ALPHA_PERCENT), not the browser's grey. A pseudo-element cannot be styled inline, so one
+ * rule for every editor goes into the page once.
+ */
+function ensurePlaceholderStyle(): void {
+    if (typeof document === 'undefined' || document.getElementById('rc-text-input-style')) return;
+    const style = document.createElement('style');
+    style.id = 'rc-text-input-style';
+    style.textContent = '[data-rc-text-input]::placeholder { color: currentColor; opacity: 0.45; }';
+    (document.head ?? document.body).appendChild(style);
 }
 
 /** The layout's keyboard type, IME action, flags, max length and content type as input attributes. */

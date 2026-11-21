@@ -20,7 +20,7 @@ import type { Component } from '../Component';
 import type { Operation } from '../../../Operation';
 import type { WireBuffer } from '../../../WireBuffer';
 import type { RemoteContext } from '../../../RemoteContext';
-import type { PaintContext } from '../../../PaintContext';
+import { PaintContext } from '../../../PaintContext';
 import type { VariableSupport } from '../../../VariableSupport';
 
 // CoreText's TEXT_ALIGN_* values
@@ -286,7 +286,11 @@ export class TextInputLayout extends BoxLayout implements VariableSupport {
         this.mHintPaint.setTextSize(fontSize);
         this.mHintPaint.setTextStyle(0, Math.round(weight), italic);
         paintContext.replacePaint(this.mHintPaint);
-        paintContext.getTextBounds(this.mHintId, 0, length, 0, this.mHintBounds);
+        // The font's height, as CoreText measures the text it stands for: the hint's baseline is
+        // then the text's, and where the editor's caret and placeholder appear when it opens.
+        // (Java measures the ink box here, so its hint sits a cap height down instead of an
+        // ascent, a few pixels higher than the text; on the web that jumped as editing began.)
+        paintContext.getTextBounds(this.mHintId, 0, length, PaintContext.TEXT_MEASURE_FONT_HEIGHT, this.mHintBounds);
         const hintWidth = this.mHintBounds[2] - this.mHintBounds[0];
         const px = align === TEXT_ALIGN_CENTER ? (contentW - hintWidth) / 2
             : align === TEXT_ALIGN_RIGHT || align === TEXT_ALIGN_END ? contentW - hintWidth : 0;
