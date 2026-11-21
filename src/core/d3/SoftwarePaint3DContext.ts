@@ -269,6 +269,12 @@ export class SoftwarePaint3DContext {
         }
     }
 
+    /** Clears the colour and keeps the depth: what was composited is gone, and later meshes
+     *  of the pass still depth-test against it. */
+    clearColor3D(): void {
+        this.mColor?.fill(0);
+    }
+
     clearDepth3D(): void {
         if (this.mZbuf === null || this.mColor === null) {
             return;

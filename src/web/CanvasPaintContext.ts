@@ -2406,6 +2406,8 @@ export class CanvasPaintContext extends PaintContext {
     private d3glDirty = false;
     /** A run of GL meshes drawn but not yet composited (drawMesh3DModelSpace), and its size. */
     private d3glPending: { w: number; h: number } | null = null;
+    /** Software meshes drawn and not yet blitted (as the GL ones: a run goes on once). */
+    private d3SoftPending = false;
 
     /**
      * Composite the GL meshes drawn since the last flush, then clear the GL colour (not its
@@ -2414,6 +2416,11 @@ export class CanvasPaintContext extends PaintContext {
      * end of a frame (RcdPlayer.renderFrame).
      */
     flush3D(): void {
+        if (this.d3SoftPending) {
+            this.d3SoftPending = false;
+            this.blit3D();
+            this.d3?.clearColor3D();
+        }
         const p = this.d3glPending;
         if (!p || !this.d3gl) return;
         this.d3glPending = null;
@@ -2596,8 +2603,9 @@ export class CanvasPaintContext extends PaintContext {
             }
             // WebGL2 unavailable — fall through to software rather than draw nothing.
         }
+        if (this.d3glPending) this.flush3D();   // GL meshes drawn before this one go on first
         ctx3d.drawMesh3D(meshId, mode);
-        this.blit3D();
+        this.d3SoftPending = true;   // blitted once per run of meshes, by flush3D
     }
 
     /**
@@ -2615,6 +2623,7 @@ export class CanvasPaintContext extends PaintContext {
         if (this.d3gl === null) this.d3gl = new WebGL3DRenderer();
         const gl = this.d3gl;
         if (!gl.isAvailable()) return false;
+        if (this.d3SoftPending) this.flush3D();   // software meshes drawn before this one go on first
 
         const mesh = ctx3d.getMesh(meshId);
         if (!mesh) return true;                 // undefined mesh draws nothing, as in software
@@ -2678,7 +2687,6 @@ export class CanvasPaintContext extends PaintContext {
      * document order; matching that keeps mixed 2D/3D documents looking the same.
      */
     private blit3D(): void {
-        this.flush3D();
         const ctx3d = this.d3;
         const blit = this.d3Blit;
         if (ctx3d === null || blit === null) {

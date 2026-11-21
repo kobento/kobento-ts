@@ -6,6 +6,7 @@
 
 import type { TextInputSession, TextInputSupport } from '../core/TextInput';
 import { TextInputLayout } from '../core/operations/layout/managers/TextInputLayout';
+import { Visibility } from '../core/operations/layout/Component';
 
 /** Maps document pixels to page (CSS, viewport) pixels: the player knows its canvas and transform. */
 export interface DocumentToPage {
@@ -157,6 +158,16 @@ export class WebTextInputSupport implements TextInputSupport {
             const color = text.getColorValue() | 0;
             css.color = argb(color);
             css.caretColor = argb(color);
+            // The placeholder in the hint's colour (the text's at 45%), whatever the text does.
+            css['--rc-placeholder'] = argb(color);
+            // An invisible bound text: the document draws the content itself (a password's own
+            // dots, a code's boxes). The editor then takes the typing and draws none of it — no
+            // text, no caret: its bullets and caret would sit over the document's drawing out of
+            // step with it (two sets of dots of different sizes).
+            if (Visibility.isInvisible((text as any).mVisibility ?? 0)) {
+                css.color = 'transparent';
+                css.caretColor = 'transparent';
+            }
             css.fontWeight = String(Math.round(text.getFontWeightValue() || 400));
             if (text.getFontStyle() === 1) css.fontStyle = 'italic';
             const align = text.getTextAlignValue();
@@ -165,7 +176,10 @@ export class WebTextInputSupport implements TextInputSupport {
             css.fontSize = `${36 * s}px`;   // TextStyle.DEFAULT_FONT_SIZE
             css.color = 'rgb(0, 0, 0)';
         }
-        Object.assign(editor.style, css);
+        for (const [k, v] of Object.entries(css)) {
+            if (k.startsWith('--')) editor.style.setProperty(k, v);
+            else (editor.style as any)[k] = v;
+        }
         editor.setAttribute('data-rc-text-input', String(session.getLayout().getTextId()));
     }
 }
@@ -179,7 +193,7 @@ function ensurePlaceholderStyle(): void {
     if (typeof document === 'undefined' || document.getElementById('rc-text-input-style')) return;
     const style = document.createElement('style');
     style.id = 'rc-text-input-style';
-    style.textContent = '[data-rc-text-input]::placeholder { color: currentColor; opacity: 0.45; }';
+    style.textContent = '[data-rc-text-input]::placeholder { color: var(--rc-placeholder, currentColor); opacity: 0.45; }';
     (document.head ?? document.body).appendChild(style);
 }
 
