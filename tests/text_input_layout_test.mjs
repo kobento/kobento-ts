@@ -5,6 +5,8 @@
 //   2 a text "@city" ("Paris") with json2rc's textInput modifier (rewritten into the layout)
 //   3 textInput "@code" { box } (empty, hint "Code")       no bound text: hint at the content origin,
 //     in the default style (black at 45%), on a white field
+//   4 textInput "@pin" { text "@pin", invisible } (empty, hint "PIN") -> the hint where the text
+//     is: the layout draws it, whether the text is shown or not (Java paintHint)
 // Checks: an empty string draws its hint (dimmed), a click starts a session with the right
 // layout, bounds and text, setText writes the string, the bound text is not painted while the
 // editor shows it, and end() paints it again.
@@ -25,7 +27,7 @@ const { RemoteComposeBuffer, CoreDocument, CanvasPaintContext, WebRemoteContext 
     await import(pathToFileURL(path.join(root, "build-node", "node-entry.js")).href);
 const { convert } = createRequire(import.meta.url)(path.join(process.env.KOBENTO_TOOLS ?? path.join(root, "..", "kobento-tools"), "json2rc", "build", "Parser.js"));
 
-const W = 300, H = 240;
+const W = 300, H = 300;
 const bytes = convert(JSON.parse(fs.readFileSync(path.join(here, "fixtures", "text_input.json"), "utf8")));
 const doc = new CoreDocument();
 doc.initFromBuffer(RemoteComposeBuffer.fromArrayBuffer(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)));
@@ -73,6 +75,8 @@ assert.ok(hint0.max < 500, `the hint is dimmed (max ${hint0.max}, white text is 
 assert.ok(ink(1, 60).n > 30, "field 1: the hint of a text nested in a row");
 assert.ok(grey > 30, "field 3: an unbound layout draws its hint at its content origin");
 assert.ok(city.n > 30 && city.max > 600, "field 2 (the modifier form) shows its text in full colour");
+const pin = ink(4);
+assert.ok(pin.n > 30 && pin.max < 500, "field 4: an invisible bound text still gets its hint");
 
 // A tap on field 0 starts a session over the bound text.
 assert.equal(doc.onClick(ctx, 150, 30), true, "a tap on the field is handled");
