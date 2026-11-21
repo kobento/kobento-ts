@@ -78,12 +78,13 @@ export class Component extends PaintOperation implements Container {
     mNeedsMeasure = true;
     mNeedsRepaint = true;
     mFirstLayout = true;
-    // Whether this component has been laid out visible once. One that has only ever been GONE
-    // (a title or page shown by a visibility modifier, not yet selected) was laid out at a
-    // placeholder position (its parent's origin): its first entrance starts at its target
-    // bounds and only fades, instead of moving from that position (a slide down the first
-    // time a hidden title appeared, a plain fade every time after).
-    mLaidOutVisible = false;
+    // Whether this component was shown at its last layout: it and every ancestor not GONE.
+    // A layout animation moves a component from those bounds only when they were shown ones.
+    // One that was GONE, or inside a GONE ancestor, was laid out at placeholder bounds (its
+    // parent's origin, or the width a GONE panel gives its children): it enters at its target
+    // bounds and only fades. Otherwise a hidden title slid down the first time it appeared
+    // (CMP-77), and a list inside a panel shown by a tab grew from a sliver every time (CMP-49).
+    mShown = false;
     // The visibility this component was last laid out with: what an animation starts from.
     // (A visibility modifier sets mVisibility as soon as its variable changes; the reference
     // schedules it, leaving mVisibility at the laid-out value until the next layout.)
@@ -230,7 +231,7 @@ export class Component extends PaintOperation implements Container {
         if (allowAnimation) {
             if (this.mAnimateMeasure === null) {
                 const target = new ComponentMeasure(this.mComponentId, m.getX(), m.getY(), m.getW(), m.getH(), m.getVisibility());
-                const origin = this.mLaidOutVisible
+                const origin = this.mShown
                     ? new ComponentMeasure(this.mComponentId, this.mX, this.mY, this.mWidth, this.mHeight, this.mLayoutVisibility)
                     : new ComponentMeasure(this.mComponentId, m.getX(), m.getY(), m.getW(), m.getH(), this.mLayoutVisibility);
                 if (!target.same(origin)) {
@@ -275,7 +276,8 @@ export class Component extends PaintOperation implements Container {
         // Keep the override bits: a child a collapsible layout dropped (OVERRIDE_GONE) must start
         // the next pass gone, or every layout animates it out again and repaints forever.
         this.mLayoutVisibility = m.getVisibility();
-        if (!Visibility.isGone(m.getVisibility())) this.mLaidOutVisible = true;
+        // Parents lay out before their children, so the parent's flag is this pass's.
+        this.mShown = !Visibility.isGone(m.getVisibility()) && (this.mParent === null || this.mParent.mShown);
         this.mFirstLayout = false;
     }
 

@@ -17,6 +17,8 @@ export class RootLayoutComponent extends Component {
 
     constructor(componentId: number = -1) {
         super(componentId);
+        // The root is always shown; it never runs Component.layout to say so (mShown).
+        this.mShown = true;
     }
 
     getHasTouchListeners(): boolean { return this.mHasTouchListeners; }

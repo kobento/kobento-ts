@@ -60,3 +60,4 @@ for (const y of first) assert.equal(y, shown, `the first entrance stays at y=${s
 entrance(0, texts[0]);
 for (const y of entrance(1, texts[1])) assert.equal(y, shown, "later entrances stay in place too");
 console.log("first_entrance_test: ok");
+process.exit(0);
