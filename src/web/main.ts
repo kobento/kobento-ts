@@ -668,6 +668,7 @@ export { createPlayer, RcPlayerElement, base64ToArrayBuffer };
 export { CanvasPaintContext };
 export { WebCustomHost, parseEmbedConfig, fitInto } from './CustomHosts';
 export { pinClock } from '../core/ClockPin';
+export { typeText } from './TextInput';
 export { createHostApi } from './HostApi';
 export { decompressDocument, isCompressed } from '../core/Compression';
 export type { HostApi, HostType, HostValue } from './HostApi';

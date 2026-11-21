@@ -208,6 +208,28 @@ const AUTOCOMPLETE: Record<number, string> = {
     [T.CONTENT_TYPE_CREDIT_CARD_SECURITY_CODE]: 'cc-csc',
 };
 
+/**
+ * Typing without an editor, for tools that check a document (the MCP inspector): what
+ * WebTextInputSupport does with these keystrokes. Each character goes through the layout's
+ * filter and max length as the editor's input event applies them; the string follows each
+ * keystroke unless the layout commits on done; with `done` the session ends as Enter or a click
+ * elsewhere ends it, committing the text. Returns the text the field holds.
+ */
+export function typeText(session: TextInputSession, typed: string, done = true): string {
+    const op = session.getLayout();
+    const live = !op.hasInputFlag(T.FLAG_COMMIT_ON_DONE);
+    let value = filtered(session.getText(), op);
+    for (const ch of typed) {
+        value = filtered(value + ch, op);
+        if (live && session.isActive()) session.setText(value);
+    }
+    if (done && session.isActive()) {
+        session.setText(value);
+        session.end();
+    }
+    return value;
+}
+
 /** The text with the characters the layout's filter refuses removed, cut to its max length. */
 export function filtered(text: string, op: TextInputLayout): string {
     let out = text;
