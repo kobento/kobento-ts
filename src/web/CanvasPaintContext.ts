@@ -1742,7 +1742,10 @@ export class CanvasPaintContext extends PaintContext {
                       _justificationMode: number, _useUnderline: boolean,
                       _strikethrough: boolean, _flags: number): any {
         const str = this.textCache.get(textId);
-        if (!str) return null;
+        // Only a missing string lays out nothing: an empty one is one empty line, as
+        // StaticLayout makes it, so an empty field with an ellipsis or maxLines (a chat
+        // composer) keeps a line's height and its hint sits where the text would.
+        if (str === undefined || str === null) return null;
         if (CanvasPaintContext.mockTextMetrics) {
             // MockRemoteContext.layoutComplexText: getText(textId).length * 30, by 40.
             return { lines: [str], alignment, lineHeight: 40, width: str.length * 30, height: 40,
