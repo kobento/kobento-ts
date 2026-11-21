@@ -387,6 +387,7 @@ export class WebCustomHost implements CustomComponentHost {
         paint.clearNeedsRepaint();
         try {
             doc.paint(ctx, Theme.DARK);
+            paint.flush3D?.();   // its last run of GL meshes, inside the embed's clip
         } finally {
             canvas.restore();
         }

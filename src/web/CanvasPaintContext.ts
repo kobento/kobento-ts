@@ -2404,6 +2404,22 @@ export class CanvasPaintContext extends PaintContext {
     private d3glMesh: CanvasMesh = createCanvasMesh();
     /** Whether anything has been drawn into the GL canvas this 3D pass. */
     private d3glDirty = false;
+    /** A run of GL meshes drawn but not yet composited (drawMesh3DModelSpace), and its size. */
+    private d3glPending: { w: number; h: number } | null = null;
+
+    /**
+     * Composite the GL meshes drawn since the last flush, then clear the GL colour (not its
+     * depth, so later meshes of the pass still depth-test against them). Called before anything
+     * else touches the canvas, under the same transform the meshes were drawn for, and at the
+     * end of a frame (RcdPlayer.renderFrame).
+     */
+    flush3D(): void {
+        const p = this.d3glPending;
+        if (!p || !this.d3gl) return;
+        this.d3glPending = null;
+        this.ctx.drawImage(this.d3gl.getCanvas(), 0, 0, p.w, p.h);
+        this.d3gl.clearComposited();
+    }
     /** Texture generation last uploaded to GL, so an unchanged texture is not re-uploaded. */
     private d3glTexGen = -1;
     private d3Blit: CanvasRenderingContext2D | null = null;
@@ -2486,6 +2502,7 @@ export class CanvasPaintContext extends PaintContext {
     }
 
     clearDepth3D(): void {
+        this.flush3D();
         this.ensure3D().clearDepth3D();
         // The GL backend accumulates colour and depth across the whole pass, exactly as the
         // software buffers do, so this is where its buffers reset too.
@@ -2611,10 +2628,12 @@ export class CanvasPaintContext extends PaintContext {
         if (!gl.drawModelSpace(meshId, mesh, ctx3d.getGlFrame(), useSmooth, w, h)) {
             return false;
         }
-        // Composite the accumulated GL canvas after every mesh, matching the software path's
-        // blit-after-every-mesh. That is what lets 3D interleave with 2D in document order
-        // while meshes still depth-test against each other.
-        this.ctx.drawImage(gl.getCanvas(), 0, 0, w, h);
+        // Composited lazily: a run of meshes goes onto the canvas once, when anything else is
+        // about to draw (flush3D). Compositing the accumulated canvas after every mesh drew each
+        // earlier mesh again, and an antialiased edge drawn over itself N times turns opaque;
+        // compositing each mesh alone left seams where two meshes' edges meet. 3D still
+        // interleaves with 2D in document order: the next 2D draw flushes first.
+        this.d3glPending = { w, h };
         (globalThis as unknown as { __rcGlModelDraws?: number }).__rcGlModelDraws =
             gl.modelDrawCount;
         return true;
@@ -2630,6 +2649,7 @@ export class CanvasPaintContext extends PaintContext {
      */
     private drawMesh3DGl(ctx3d: SoftwarePaint3DContext, meshId: number,
                          smooth: boolean, useDepth: boolean): boolean {
+        this.flush3D();   // this backend clears the shared GL canvas for each mesh
         if (this.d3gl === null) this.d3gl = new WebGL3DRenderer();
         const gl = this.d3gl;
         if (!gl.isAvailable()) return false;
@@ -2658,6 +2678,7 @@ export class CanvasPaintContext extends PaintContext {
      * document order; matching that keeps mixed 2D/3D documents looking the same.
      */
     private blit3D(): void {
+        this.flush3D();
         const ctx3d = this.d3;
         const blit = this.d3Blit;
         if (ctx3d === null || blit === null) {
@@ -2694,4 +2715,22 @@ export class CanvasPaintContext extends PaintContext {
         }
     }
 
+}
+
+// Anything that draws on the canvas, or changes the transform, clip or layer a pending GL
+// composite was drawn for, composites it first (CanvasPaintContext.flush3D).
+for (const name of [
+    'drawRect', 'drawCircle', 'drawLine', 'drawOval', 'drawRoundRect', 'drawArc', 'drawSector',
+    'drawMesh', 'drawPath', 'drawTextRun', 'drawTextOnPath', 'drawComplexText', 'drawBitmap',
+    'drawBitmapSimple', 'drawTweenPath', 'drawToBitmap', 'matrixSave', 'matrixRestore',
+    'matrixTranslate', 'matrixScale', 'matrixRotate', 'matrixSkew', 'matrixFromPath',
+    'matrixFromMesh', 'clipRect', 'clipPath', 'startGraphicsLayer', 'endGraphicsLayer',
+] as const) {
+    const proto = CanvasPaintContext.prototype as any;
+    const original = proto[name];
+    if (typeof original !== 'function') throw new Error(`CanvasPaintContext.${name} is not a method`);
+    proto[name] = function (this: CanvasPaintContext, ...args: unknown[]) {
+        this.flush3D();
+        return original.apply(this, args);
+    };
 }

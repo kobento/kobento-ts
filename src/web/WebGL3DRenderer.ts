@@ -522,6 +522,20 @@ export class WebGL3DRenderer {
         this.passStarted = true;
     }
 
+    /**
+     * Clear the colour after a composite and keep the depth: the next mesh still depth-tests
+     * against everything drawn in the pass, but only it is in the canvas when it is composited.
+     * Compositing the accumulated canvas after every mesh drew each earlier mesh again, and an
+     * edge pixel at partial coverage drawn over itself N times turns opaque (1 - (1 - a)^N):
+     * the MSAA edges came out hard. Composited once each, they keep their coverage.
+     */
+    clearComposited(): void {
+        const gl = this.gl;
+        if (!gl || !this.passStarted) return;
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+    }
+
     /** Drop a mesh's uploaded buffers, so a redefinition is not drawn from stale geometry. */
     invalidateMesh(meshId: number): void {
         const gl = this.gl;

@@ -440,6 +440,7 @@ export class RcdPlayer {
             theme = isDark ? Theme.DARK : Theme.LIGHT;
         }
         this.document.paint(this.remoteContext, theme);
+        this.paintContext.flush3D();   // the last run of GL meshes, if nothing drew after it
 
         // Notify variable listener after paint
         if (this.variableListener) {
