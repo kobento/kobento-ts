@@ -232,7 +232,9 @@ export class FloatConstant extends Operation {
             ? Math.random() : intBitsToFloat(valueBits);
     }
 
-    update(other: FloatConstant): void { this.mValue = other.mValue; }
+    update(other: FloatConstant): void {
+        if (other.mValue !== this.mValue) { this.mValue = other.mValue; this.markDirty(); }
+    }
 
     write(_buffer: WireBuffer): void { /* stub */ }
 

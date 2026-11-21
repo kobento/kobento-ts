@@ -775,6 +775,11 @@ export class CoreDocument implements ExpansionDocument {
             }
             if (apply) {
                 const opIsDirty = op.isDirty();
+                // Java applies an operation here only if it is dirty or paints; the data pass
+                // left the constants clean, so a declared variable is set once. Re-applying it
+                // each frame put back its initial value over what a touch had written (a
+                // scroll position read before the scroll paints, a height bound to it).
+                if (op instanceof FloatConstant && !opIsDirty) continue;
                 if (opIsDirty && typeof (op as any).updateVariables === 'function') {
                     op.markNotDirty();
                     (op as any).updateVariables(context);
