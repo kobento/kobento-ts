@@ -885,6 +885,18 @@ export class CoreDocument implements ExpansionDocument {
     touchModifierRan(component: any): void {
         this.mModifierRan.add(component);
     }
+    /** Whether this component's touch-up / cancel modifiers already ran in this gesture. */
+    hasTouchModifierRun(component: any): boolean {
+        return this.mModifierRan.has(component);
+    }
+    /** Touch expressions given this gesture's touch-up or cancel (each takes it once). */
+    private mTouchEndDelivered = new Set<any>();
+    /** True when `op` already had this gesture's end; otherwise records it and returns false. */
+    touchEndDelivered(op: any): boolean {
+        if (this.mTouchEndDelivered.has(op)) return true;
+        this.mTouchEndDelivered.add(op);
+        return false;
+    }
     private runModifierTouchTargets(context: RemoteContext, phase: 'up' | 'cancel'): boolean {
         let handled = false;
         for (const c of this.mModifierTouchTargets) {
@@ -906,6 +918,7 @@ export class CoreDocument implements ExpansionDocument {
     touchDown(context: RemoteContext, x: number, y: number): boolean {
         this.mModifierTouchTargets.clear();
         this.mModifierRan.clear();
+        this.mTouchEndDelivered.clear();
         context.loadFloat(RemoteContext.ID_TOUCH_POS_X, x);
         context.loadFloat(RemoteContext.ID_TOUCH_POS_Y, y);
         for (const listener of this.mTouchListeners) {

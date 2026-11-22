@@ -895,6 +895,8 @@ export class LayoutComponent extends Component {
         // This component's own touch expressions, in content and in non-layout children.
         for (const op of this.mContentOps) {
             if (op instanceof TouchExpression) {
+                // a touch-up or cancel reaches each expression once a gesture (see above)
+                if ((phase === 'up' || phase === 'cancel') && doc.touchEndDelivered?.(op)) { handled = true; continue; }
                 if (this.deliverToExpression(op, context, lx, ly, dx, dy, phase)) {
                     if (phase === 'down') doc.appliedTouchOperation(this);
                     handled = true;
@@ -924,11 +926,13 @@ export class LayoutComponent extends Component {
                 doc.modifierTouchTarget?.(this);
                 handled = true;
             } else if (phase === 'up' && mod instanceof TouchUpModifier) {
-                mod.onTouchUp(context);
+                // Once a gesture: an ancestor that also took the touch (a scroll) passes the
+                // forced touch-up down to this component again (C++ keeps one target list).
+                if (!doc.hasTouchModifierRun?.(this)) mod.onTouchUp(context);
                 doc.touchModifierRan?.(this);
                 handled = true;
             } else if (phase === 'cancel' && mod instanceof TouchCancelModifier) {
-                mod.onTouchCancel(context);
+                if (!doc.hasTouchModifierRun?.(this)) mod.onTouchCancel(context);
                 doc.touchModifierRan?.(this);
                 handled = true;
             }
@@ -989,7 +993,9 @@ export class LayoutComponent extends Component {
         let handled = false;
         for (const op of ops) {
             if (op instanceof TouchExpression) {
-                this.deliverToExpression(op, context, lx, ly, dx, dy, phase);
+                if (!((phase === 'up' || phase === 'cancel') && doc.touchEndDelivered?.(op))) {
+                    this.deliverToExpression(op, context, lx, ly, dx, dy, phase);
+                }
                 if (phase === 'down') doc.appliedTouchOperation(this);
                 handled = true;
             } else if (typeof (op as any).getList === 'function') {
