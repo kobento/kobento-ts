@@ -68,8 +68,11 @@ export class RemoteComposeBuffer {
             const opId = this.mBuffer.readByte();
             const reader = map.get(opId);
             if (!reader) {
-                console.warn(`Unknown operation opcode: ${opId}, skipping rest of buffer`);
-                return;
+                // Nothing after it can be read (operations carry no length), so the document is
+                // refused, as androidx's reader does ("Unknown operation encountered"), rather
+                // than played without its rest.
+                throw new Error(`Unknown operation ${opId} at byte ${startOffset}: this player cannot read the document ` +
+                    `(an operation newer than the player, or not a RemoteCompose document)`);
             }
             const before = operations.length;
             const trace: number[] = [];
