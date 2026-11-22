@@ -168,8 +168,10 @@ export class WidthInModifier extends Operation implements VariableSupport {
         if (isNaNBits(this.mMaxBits)) context.listensTo(idFromBits(this.mMaxBits), this);
     }
     updateVariables(context: RemoteContext): void {
-        if (isNaNBits(this.mMinBits)) this.mOutMin = context.getFloat(idFromBits(this.mMinBits));
-        if (isNaNBits(this.mMaxBits)) this.mOutMax = context.getFloat(idFromBits(this.mMaxBits));
+        // From the written value each time (as the reference's mV1 = ... mValue1): a literal
+        // bound scaled in place grew by the density on every update (48 -> 96 -> 192 at 2).
+        this.mOutMin = isNaNBits(this.mMinBits) ? context.getFloat(idFromBits(this.mMinBits)) : intBitsToFloat(this.mMinBits);
+        this.mOutMax = isNaNBits(this.mMaxBits) ? context.getFloat(idFromBits(this.mMaxBits)) : intBitsToFloat(this.mMaxBits);
         // These bounds are authored in dp, so they scale with density — the reference
         // does the same in DimensionInModifierOperation.updateVariables, and scales unless
         // the document explicitly says PIXELS (LEGACY, the default, still scales).
@@ -210,8 +212,10 @@ export class HeightInModifier extends Operation implements VariableSupport {
         if (isNaNBits(this.mMaxBits)) context.listensTo(idFromBits(this.mMaxBits), this);
     }
     updateVariables(context: RemoteContext): void {
-        if (isNaNBits(this.mMinBits)) this.mOutMin = context.getFloat(idFromBits(this.mMinBits));
-        if (isNaNBits(this.mMaxBits)) this.mOutMax = context.getFloat(idFromBits(this.mMaxBits));
+        // From the written value each time (as the reference's mV1 = ... mValue1): a literal
+        // bound scaled in place grew by the density on every update (48 -> 96 -> 192 at 2).
+        this.mOutMin = isNaNBits(this.mMinBits) ? context.getFloat(idFromBits(this.mMinBits)) : intBitsToFloat(this.mMinBits);
+        this.mOutMax = isNaNBits(this.mMaxBits) ? context.getFloat(idFromBits(this.mMaxBits)) : intBitsToFloat(this.mMaxBits);
         // These bounds are authored in dp, so they scale with density — the reference
         // does the same in DimensionInModifierOperation.updateVariables, and scales unless
         // the document explicitly says PIXELS (LEGACY, the default, still scales).
