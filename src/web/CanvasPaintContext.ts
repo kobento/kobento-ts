@@ -1607,6 +1607,19 @@ export class CanvasPaintContext extends PaintContext {
         );
     }
 
+    /**
+     * The paragraph direction of a text, as Android draws it (TextDirectionHeuristics
+     * FIRSTSTRONG_LTR) and the C++ player does: right to left when its first strong character
+     * is (Hebrew, Arabic, ...), else left to right. A canvas's own default is the page's
+     * direction, so "!שלום" or "مرحبا ABC" came out in left-to-right order. x stays the left
+     * edge either way: the canvas aligns to the left, not to the start.
+     */
+    private setTextDirection(text: string): void {
+        const d = firstStrongRtl(text) ? 'rtl' : 'ltr';
+        if (this.ctx.direction !== d) this.ctx.direction = d;
+        if (this.ctx.textAlign !== 'left') this.ctx.textAlign = 'left';
+    }
+
     drawTextRun(textId: number, start: number, end: number,
                 _contextStart: number, _contextEnd: number,
                 x: number, y: number, _rtl: boolean): void {
@@ -1616,6 +1629,7 @@ export class CanvasPaintContext extends PaintContext {
         const e = end >= 0 ? Math.min(end, text.length) : text.length;
         const substr = text.substring(s, e);
         this.setFont();
+        this.setTextDirection(substr);
         this.fillOrStroke(
             () => { this.applyFillStyle(); this.ctx.fillText(substr, x, y); },
             () => { this.applyStrokeStyle(); this.ctx.strokeText(substr, x, y); }
@@ -1907,6 +1921,8 @@ export class CanvasPaintContext extends PaintContext {
         const layoutWidth = (typeof targetWidth === 'number' && targetWidth > 0) ? targetWidth : width;
         this.setFont();
         this.ctx.textBaseline = 'top';
+        // One direction for the paragraph, from its first strong character, as Android's layout.
+        this.setTextDirection(lines.join(''));
         const align = (typeof alignment === 'number') ? (alignment & 0xFFFF) : 1;
         for (let i = 0; i < lines.length; i++) {
             let x = 0;
@@ -2741,4 +2757,13 @@ for (const name of [
         this.flush3D();
         return original.apply(this, args);
     };
+}
+
+/** Right-to-left scripts: Hebrew to Arabic Extended-A, presentation forms, and the RTL planes' blocks. */
+const RTL_LETTER = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]|[\u{10800}-\u{10FFF}\u{1E800}-\u{1EFFF}]/u;
+
+/** True when a text's first letter (its first strong character) is right to left. */
+export function firstStrongRtl(text: string): boolean {
+    const m = /\p{L}/u.exec(text);
+    return m !== null && RTL_LETTER.test(m[0]);
 }
