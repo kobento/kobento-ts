@@ -6,6 +6,7 @@
 //   host.get("qty");                     // a value the document changed (a slider it exports)
 //   host.onAction("checkout", (value) => { ... });   // a hostNamedAction the document sent
 //   host.onChange("qty", (value) => { ... });        // a variable that changed, whoever changed it
+//   if (!host.back()) leaveScreen();     // the system back: the document's while it can go back
 //   host.dispose();
 //
 // It follows the player across document loads (a restart, a theme or look switch): the values it
@@ -30,6 +31,18 @@ export interface HostApi {
     onAction(name: string, handler: (value: unknown, name: string) => void): () => void;
     /** Calls `handler(value, name)` when that variable's value changes ("*": any). Returns a remover. */
     onChange(name: string, handler: (value: HostValue | undefined, name: string) => void): () => void;
+    /**
+     * Whether the document handles back itself now (the Navigator convention: its exported
+     * canGoBack is 1). Read it when a back gesture starts, to know whose back it is.
+     */
+    canGoBack(): boolean;
+    /**
+     * The system back. While the document can go back, adds 1 to its exported backCount (it
+     * pops) and returns true; otherwise returns false: back is the app's (leave the screen).
+     * The document's own requests arrive as host actions: "back" (pop the app's stack) and
+     * "navigate" (the value is a route, maybe with ?presentation=modal or replace).
+     */
+    back(): boolean;
     /** Stops watching; the values set stay as they are. */
     dispose(): void;
 }
@@ -171,6 +184,16 @@ export function createHostApi(player: RcdPlayer): HostApi {
             changes.push(l);
             if (name !== '*' && !last.has(name)) last.set(name, JSON.stringify(read(name)));
             return remover(changes, l);
+        },
+        canGoBack() {
+            return Number(read('canGoBack') ?? 0) > 0.5;
+        },
+        back() {
+            if (Number(read('canGoBack') ?? 0) <= 0.5) return false;
+            // Not sticky: a new document starts its own count.
+            const ok = write('backCount', Number(read('backCount') ?? 0) + 1);
+            if (ok) player.repaint?.();
+            return ok;
         },
         dispose() {
             disposed = true;
