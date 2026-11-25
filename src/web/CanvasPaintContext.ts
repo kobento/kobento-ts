@@ -1751,10 +1751,27 @@ export class CanvasPaintContext extends PaintContext {
 
     layoutComplexText(textId: number, start: number, end: number, alignment: number,
                       overflow: number, maxLines: number, maxWidth: number, maxHeight: number,
+                      letterSpacing: number, lineHeightAdd: number, lineHeightMultiplier: number,
+                      lineBreakStrategy: number, hyphenationFrequency: number,
+                      justificationMode: number, useUnderline: boolean,
+                      strikethrough: boolean, flags: number): any {
+        const layout = this.layoutComplexLines(textId, start, end, alignment, overflow, maxLines,
+            maxWidth, maxHeight, letterSpacing, lineHeightAdd, lineHeightMultiplier,
+            lineBreakStrategy, hyphenationFrequency, justificationMode, flags);
+        // The decorations are part of the layout, as in StaticLayout's paint: drawComplexText
+        // draws them under / through each line it draws.
+        if (layout) {
+            layout.underline = !!useUnderline;
+            layout.strikethrough = !!strikethrough;
+        }
+        return layout;
+    }
+
+    private layoutComplexLines(textId: number, start: number, end: number, alignment: number,
+                      overflow: number, maxLines: number, maxWidth: number, maxHeight: number,
                       _letterSpacing: number, _lineHeightAdd: number, lineHeightMultiplier: number,
                       _lineBreakStrategy: number, _hyphenationFrequency: number,
-                      _justificationMode: number, _useUnderline: boolean,
-                      _strikethrough: boolean, _flags: number): any {
+                      _justificationMode: number, _flags: number): any {
         const str = this.textCache.get(textId);
         // Only a missing string lays out nothing: an empty one is one empty line, as
         // StaticLayout makes it, so an empty field with an ellipsis or maxLines (a chat
@@ -1924,6 +1941,14 @@ export class CanvasPaintContext extends PaintContext {
         // One direction for the paragraph, from its first strong character, as Android's layout.
         this.setTextDirection(lines.join(''));
         const align = (typeof alignment === 'number') ? (alignment & 0xFFFF) : 1;
+        const { underline, strikethrough } = computedTextLayout;
+        const decorate = !!(underline || strikethrough);
+        const size = this.textSize > 0 ? this.textSize : DEFAULT_TEXT_SIZE;
+        const baseline = decorate ? this.topToBaseline(size) : 0;
+        // As the C++ player: a bar the line's width in the text paint, its thickness 1/16 of
+        // the text size, 0.11 of the size below the baseline (underline) or 0.30 above it
+        // (strikethrough, through the lowercase letters).
+        const t = Math.max(1, size / 16);
         for (let i = 0; i < lines.length; i++) {
             let x = 0;
             const lineW = this.measureTextCached(lines[i]).width;
@@ -1938,7 +1963,36 @@ export class CanvasPaintContext extends PaintContext {
                 () => { this.applyFillStyle(); this.ctx.fillText(lines[i], x, i * lineHeight); },
                 () => { this.applyStrokeStyle(); this.ctx.strokeText(lines[i], x, i * lineHeight); }
             );
+            if (decorate && lineW > 0) {
+                const y = i * lineHeight + baseline;
+                this.applyFillStyle();
+                if (underline) this.ctx.fillRect(x, y + size * 0.11, lineW, t);
+                if (strikethrough) this.ctx.fillRect(x, y - size * 0.30 - t / 2, lineW, t);
+            }
         }
+    }
+
+    // How far below the 'top' line drawComplexText draws at the alphabetic baseline lies, for
+    // the current font: the same font's ascent measured from both lines. The font box where
+    // the canvas has one, else the ink box of "x" (no descender, so its bottom is the
+    // baseline), else Roboto's proportion.
+    private topToBaseline(size: number): number {
+        const was = this.ctx.textBaseline;
+        this.ctx.textBaseline = 'alphabetic';
+        const a: any = this.ctx.measureText('x');
+        this.ctx.textBaseline = 'top';
+        const b: any = this.ctx.measureText('x');
+        this.ctx.textBaseline = was;
+        const ok = (v: any) => typeof v === 'number' && isFinite(v);
+        if (ok(a.fontBoundingBoxAscent) && ok(b.fontBoundingBoxAscent)
+            && a.fontBoundingBoxAscent > 0 && a.fontBoundingBoxAscent !== b.fontBoundingBoxAscent) {
+            return a.fontBoundingBoxAscent - b.fontBoundingBoxAscent;
+        }
+        if (ok(a.actualBoundingBoxAscent) && ok(b.actualBoundingBoxAscent)
+            && a.actualBoundingBoxAscent !== b.actualBoundingBoxAscent) {
+            return a.actualBoundingBoxAscent - b.actualBoundingBoxAscent;
+        }
+        return ASCENT_RATIO * size;
     }
 
     drawBitmap(imageId: number, srcLeft: number, srcTop: number, srcRight: number, srcBottom: number,
