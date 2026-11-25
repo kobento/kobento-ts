@@ -11,6 +11,11 @@ import { PaintContext } from '../../../PaintContext';
 import type { MeasurePass } from '../measure/MeasurePass';
 import type { Size } from '../measure/Size';
 import type { VariableSupport } from '../../../VariableSupport';
+import { TextStyle } from './TextStyle';
+
+// Java TextStyle.DEFAULT_FONT_SIZE / DEFAULT_FONT_WEIGHT: a text at these takes the style's.
+const TEXT_STYLE_DEFAULT_FONT_SIZE = 36;
+const TEXT_STYLE_DEFAULT_FONT_WEIGHT = 400;
 
 // CommandParameters type constants (from CommandParameters.java)
 const P_INT = 1;
@@ -209,7 +214,7 @@ export class CoreText extends LayoutManager implements VariableSupport {
         lineBreakStrategy: number, hyphenationFrequency: number, justificationMode: number,
         underline: boolean, strikethrough: boolean,
         fontAxis: number[] | null, fontAxisValues: number[] | null,
-        autosize: boolean, flags: number
+        autosize: boolean, flags: number, textStyleId = -1
     ) {
         super(componentId, animationId);
         this.mTextId = textId;
@@ -242,9 +247,67 @@ export class CoreText extends LayoutManager implements VariableSupport {
         this.mFontAxisValues = fontAxisValues;
         this.mAutosize = autosize;
         this.mFlags = flags;
+        this.mTextStyleId = textStyleId;
+    }
+
+    private mTextStyleId: number;
+
+    private resolveStyle(context: RemoteContext): void {
+        if (this.mTextStyleId === -1) return;
+        const style = context.getObject(this.mTextStyleId);
+        if (style instanceof TextStyle) this.applyStyle(style);
+    }
+
+    /**
+     * Java CoreText.applyStyle: the style gives every value the text left at its default (the
+     * text's own value wins). Applied from updateVariables, as in Java, once the TextStyle
+     * operation has registered itself.
+     */
+    applyStyle(style: TextStyle): void {
+        const DEFAULT_SIZE = floatToRawIntBits(TEXT_STYLE_DEFAULT_FONT_SIZE);
+        const DEFAULT_WEIGHT = floatToRawIntBits(TEXT_STYLE_DEFAULT_FONT_WEIGHT);
+        if (this.mColor === (0xFF000000 | 0) && style.color !== null) this.mColor = style.color;
+        if (this.mColorId === -1 && style.colorId !== null) this.mColorId = style.colorId;
+        if (this.mFontSize === DEFAULT_SIZE && style.fontSize !== null) this.mFontSize = style.fontSize;
+        if (this.mMinFontSize === -1 && style.minFontSize !== null) this.mMinFontSize = style.minFontSize;
+        if (this.mMaxFontSize === -1 && style.maxFontSize !== null) this.mMaxFontSize = style.maxFontSize;
+        if (this.mFontStyle === 0 && style.fontStyle !== null) this.mFontStyle = style.fontStyle;
+        if (this.mFontWeight === DEFAULT_WEIGHT && style.fontWeight !== null) this.mFontWeight = style.fontWeight;
+        if (this.mFontFamilyId === -1 && style.fontFamilyId !== null) this.mFontFamilyId = style.fontFamilyId;
+        if (this.mTextAlign === 1 && style.textAlign !== null) {
+            this.mTextAlign = style.textAlign;
+            this.mTextAlignValue = this.mTextAlign & 0xFFFF;
+        }
+        if (this.mOverflow === 1 && style.overflow !== null) this.mOverflow = style.overflow;
+        if (this.mMaxLines === 0x7FFFFFFF && style.maxLines !== null) this.mMaxLines = style.maxLines;
+        if (this.mLetterSpacing === 0 && style.letterSpacing !== null) this.mLetterSpacing = style.letterSpacing;
+        if (this.mLineHeightAdd === 0 && style.lineHeightAdd !== null) this.mLineHeightAdd = style.lineHeightAdd;
+        if (this.mLineHeightMultiplier === 1 && style.lineHeightMultiplier !== null) {
+            this.mLineHeightMultiplier = style.lineHeightMultiplier;
+        }
+        if (this.mLineBreakStrategy === 0 && style.lineBreakStrategy !== null) {
+            this.mLineBreakStrategy = style.lineBreakStrategy;
+        }
+        if (this.mHyphenationFrequency === 0 && style.hyphenationFrequency !== null) {
+            this.mHyphenationFrequency = style.hyphenationFrequency;
+        }
+        if (this.mJustificationMode === 0 && style.justificationMode !== null) {
+            this.mJustificationMode = style.justificationMode;
+        }
+        if (!this.mUnderline && style.underline !== null) this.mUnderline = style.underline;
+        if (!this.mStrikethrough && style.strikethrough !== null) this.mStrikethrough = style.strikethrough;
+        if (this.mFontAxis === null && style.fontAxis !== null) {
+            this.mFontAxis = style.fontAxis;
+            this.mFontAxisValues = style.fontAxisValues;
+        }
+        if (!this.mAutosize && style.autosize !== null) this.mAutosize = style.autosize;
+        this.mIsDynamicColorEnabled = this.mColorId !== -1;
     }
 
     registerListening(context: RemoteContext): void {
+        // The style first (Java applies it only in updateVariables): a font size, weight or
+        // colour the style takes from a variable is then listened to like the text's own.
+        this.resolveStyle(context);
         if (this.mTextId !== -1) {
             context.listensTo(this.mTextId, this);
         }
@@ -260,6 +323,7 @@ export class CoreText extends LayoutManager implements VariableSupport {
     }
 
     updateVariables(context: RemoteContext): void {
+        this.resolveStyle(context);
         this.mFontSizeValue = isNaNBits(this.mFontSize)
             ? context.getFloat(idFromBits(this.mFontSize))
             : intBitsToFloat(this.mFontSize);
@@ -623,7 +687,7 @@ export class CoreText extends LayoutManager implements VariableSupport {
         // fontSize / fontWeight are kept as raw float32 int bits (default TextStyle.DEFAULT_FONT_SIZE 36.0 / 400.0).
         let fontSize = floatToRawIntBits(36), minFontSize = -1, maxFontSize = -1;
         let fontWeight = floatToRawIntBits(400), letterSpacing = 0, lineHeightAdd = 0, lineHeightMultiplier = 1;
-        let underline = false, strikethrough = false, autosize = false;
+        let underline = false, strikethrough = false, autosize = false, textStyleId = -1;
         let fontAxis: number[] | null = null;
         let fontAxisValues: number[] | null = null;
 
@@ -650,7 +714,7 @@ export class CoreText extends LayoutManager implements VariableSupport {
                     case P_HYPHENATION_FREQUENCY: hyphenationFrequency = value; break;
                     case P_JUSTIFICATION_MODE: justificationMode = value; break;
                     case P_FLAGS: flags = value; break;
-                    case P_TEXT_STYLE_ID: break; // TODO
+                    case P_TEXT_STYLE_ID: textStyleId = rid(value); break;
                 }
             },
             floatValue(id: number, bits: number) {
@@ -689,7 +753,7 @@ export class CoreText extends LayoutManager implements VariableSupport {
             letterSpacing, lineHeightAdd, lineHeightMultiplier,
             lineBreakStrategy, hyphenationFrequency, justificationMode,
             underline, strikethrough, fontAxis, fontAxisValues,
-            autosize, flags
+            autosize, flags, textStyleId
         ));
     }
 }

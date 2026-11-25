@@ -41,6 +41,8 @@ export class TextStyle extends Operation {
     id: number = -1;
     color: number | null = null;
     colorId: number | null = null;
+    // fontSize / fontWeight / fontAxisValues are raw float32 bits, as CoreText keeps them: a
+    // NaN-encoded value is a variable reference, which readFloat would lose.
     fontSize: number | null = null;
     minFontSize: number | null = null;
     maxFontSize: number | null = null;
@@ -68,11 +70,30 @@ export class TextStyle extends Operation {
     write(_buffer: WireBuffer): void { /* read-only in this player */ }
 
     apply(context: RemoteContext): void {
-        // Resolve parent style if any. The Java player walks the chain via
-        // context.getObject(parentId); we mirror only the lookup so the style
-        // is registered for downstream CoreText consumers.
+        // Java TextStyle.apply: inherit what this style leaves unset from its parent (already
+        // resolved against its own parent when it was applied), then register it for the
+        // CoreText components that name it.
+        if (this.parentId !== null && this.parentId !== -1) {
+            const parent = (context as any).getObject?.(this.parentId);
+            if (parent instanceof TextStyle) this.applyStyle(parent);
+        }
         if (this.id !== -1) {
             (context as any).putObject?.(this.id, this);
+        }
+    }
+
+    /** Java TextStyle.applyStyle: take every value this style does not set from `style`. */
+    applyStyle(style: TextStyle): void {
+        const keys = ['color', 'colorId', 'fontSize', 'minFontSize', 'maxFontSize', 'fontStyle',
+            'fontWeight', 'fontFamilyId', 'textAlign', 'overflow', 'maxLines', 'letterSpacing',
+            'lineHeightAdd', 'lineHeightMultiplier', 'lineBreakStrategy', 'hyphenationFrequency',
+            'justificationMode', 'underline', 'strikethrough', 'autosize'] as const;
+        for (const k of keys) {
+            if (this[k] === null) (this as any)[k] = style[k];
+        }
+        if (this.fontAxis === null) {
+            this.fontAxis = style.fontAxis;
+            this.fontAxisValues = style.fontAxisValues;
         }
     }
 
@@ -96,9 +117,9 @@ export class TextStyle extends Operation {
                 case P_ANIMATION_ID:          buffer.readInt(); break;
                 case P_COLOR:                 style.color = buffer.readInt(); break;
                 case P_COLOR_ID:              style.colorId = rid(buffer.readInt()); break;
-                case P_FONT_SIZE:             style.fontSize = buffer.readFloat(); break;
+                case P_FONT_SIZE:             style.fontSize = buffer.readInt(); break;
                 case P_FONT_STYLE:            style.fontStyle = buffer.readInt(); break;
-                case P_FONT_WEIGHT:           style.fontWeight = buffer.readFloat(); break;
+                case P_FONT_WEIGHT:           style.fontWeight = buffer.readInt(); break;
                 case P_FONT_FAMILY:           style.fontFamilyId = rid(buffer.readInt()); break;
                 case P_TEXT_ALIGN:            style.textAlign = buffer.readInt(); break;
                 case P_OVERFLOW:              style.overflow = buffer.readInt(); break;
@@ -121,7 +142,7 @@ export class TextStyle extends Operation {
                 case P_FONT_AXIS_VALUES: {
                     const len = buffer.readShort();
                     const arr = new Array<number>(len);
-                    for (let k = 0; k < len; k++) arr[k] = buffer.readFloat();
+                    for (let k = 0; k < len; k++) arr[k] = buffer.readInt();
                     style.fontAxisValues = arr;
                     break;
                 }
