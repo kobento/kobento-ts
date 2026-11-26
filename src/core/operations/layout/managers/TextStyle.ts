@@ -135,7 +135,8 @@ export class TextStyle extends Operation {
                 case P_FONT_AXIS: {
                     const len = buffer.readShort();
                     const arr = new Array<number>(len);
-                    for (let k = 0; k < len; k++) arr[k] = buffer.readInt();
+                    // Each axis is a text id (its tag): resolved inside a pattern (b7682af3f82).
+                    for (let k = 0; k < len; k++) arr[k] = rid(buffer.readInt());
                     style.fontAxis = arr;
                     break;
                 }

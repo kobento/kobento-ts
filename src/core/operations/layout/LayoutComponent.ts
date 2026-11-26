@@ -12,7 +12,7 @@ import { WidthModifier, HeightModifier, PaddingModifier,
          WidthInModifier, HeightInModifier, ZIndexModifier,
          DimensionConstraintsModifier,
          GraphicsLayerModifier, BackgroundModifier, BorderModifier,
-         RoundedClipRectModifier, ClipRectModifier, OffsetModifier,
+         RoundedClipRectModifier, ClipRectModifier, ClipPathModifier, OffsetModifier,
          DrawContentModifier, VisibilityModifier, ClickModifier, MultiClickModifier,
          TouchDownModifier, TouchUpModifier, TouchCancelModifier,
          ScrollModifier, MarqueeModifier, RippleModifier, AccessibilitySemantics } from './modifiers/ModifierOperations';
@@ -20,6 +20,7 @@ import { LayoutComputeOperation } from './modifiers/LayoutComputeOperation';
 import { LayoutComponentContent } from './LayoutComponentContent';
 import { CanvasContent } from './CanvasContent';
 import { ComponentValue } from '../../operations/ComponentValue';
+import { PropertyBundleModifier, PropertyBundleLookup } from './PropertyBundle';
 import { TouchExpression } from '../../operations/TouchExpression';
 import type { ComponentMeasure } from './measure/ComponentMeasure';
 
@@ -92,6 +93,7 @@ export class LayoutComponent extends Component {
         this.mContentOps = [];
         this.mComponentDataOps = [];
         this.mDynamicMemo = null;
+        this.mPropertyBundle = null;
         this.mPaddingLeft = 0;
         this.mPaddingRight = 0;
         this.mPaddingTop = 0;
@@ -161,6 +163,11 @@ export class LayoutComponent extends Component {
             } else if (op instanceof ClipRectModifier) {
                 op.setComponent(this);
                 this.mComponentModifiers.push(op);
+            } else if (op instanceof ClipPathModifier) {
+                this.mComponentModifiers.push(op);
+            } else if (op instanceof PropertyBundleModifier) {
+                // LayoutComponent.inflate: the component's bundle, for PROPERTY_BUNDLE_LOOKUP.
+                this.mPropertyBundle = op;
             } else if (op instanceof OffsetModifier) {
                 this.mComponentModifiers.push(op);
             } else if (op instanceof ClickModifier || op instanceof MultiClickModifier) {
@@ -213,6 +220,14 @@ export class LayoutComponent extends Component {
                         if (contentOp instanceof CanvasContent) {
                             this.mHasCanvasLayoutContent = true;
                         }
+                    } else if (contentOp instanceof PropertyBundleLookup) {
+                        // LayoutComponent.inflate: a lookup in our content naming no component
+                        // (-1) or the content itself reads our bundle.
+                        const id = contentOp.getComponentId();
+                        if (id === PropertyBundleLookup.SELF || id === op.getComponentId()) {
+                            contentOp.setComponentId(this.getComponentId());
+                        }
+                        this.mContentOps.push(contentOp);
                     } else if (contentOp instanceof ComponentValue) {
                         // Java ComponentData pattern: collect on parent component
                         // so we can update float vars with our dimensions during measure
@@ -238,6 +253,9 @@ export class LayoutComponent extends Component {
                 // Other operations go into component modifiers or content
                 // (and, being at the component's level, not in its content, they are what
                 // Java keeps in the component's own list: hasDynamicComputes reads them)
+                if (op instanceof PropertyBundleLookup && op.getComponentId() === PropertyBundleLookup.SELF) {
+                    op.setComponentId(this.getComponentId());
+                }
                 this.mComponentDataOps.push(op);
                 if (this.mDrawContentOperations !== null) {
                     this.mDrawContentOperations.push(op);

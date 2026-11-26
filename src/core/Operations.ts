@@ -64,7 +64,7 @@ import { CanvasLayout } from './operations/layout/managers/CanvasLayout';
 import {
     WidthModifier, HeightModifier, WidthInModifier, HeightInModifier,
     CollapsiblePriorityModifier, BackgroundModifier, BorderModifier,
-    PaddingModifier, RoundedClipRectModifier, ClipRectModifier,
+    PaddingModifier, RoundedClipRectModifier, ClipRectModifier, ClipPathModifier,
     ClickModifier, MultiClickModifier, DimensionConstraintsModifier,
     TouchDownModifier, TouchUpModifier, TouchCancelModifier,
     VisibilityModifier, OffsetModifier, ZIndexModifier, GraphicsLayerModifier,
@@ -72,6 +72,7 @@ import {
     AlignByModifier, AccessibilitySemantics
 } from './operations/layout/modifiers/ModifierOperations';
 import { Skip } from './operations/Skip';
+import { PropertyBundleModifier, PropertyBundleLookup } from './operations/layout/PropertyBundle';
 import { TextStyle } from './operations/layout/managers/TextStyle';
 import { TouchExpression } from './operations/TouchExpression';
 import { ConditionalOperations } from './operations/ConditionalOperations';
@@ -243,6 +244,9 @@ export class Operations {
         m.set(PaddingModifier.OP_CODE, PaddingModifier.read);
         m.set(RoundedClipRectModifier.OP_CODE, RoundedClipRectModifier.read);
         m.set(ClipRectModifier.OP_CODE, ClipRectModifier.read);
+        m.set(ClipPathModifier.OP_CODE, ClipPathModifier.read);
+        m.set(PropertyBundleModifier.OP_CODE, PropertyBundleModifier.read);
+        m.set(PropertyBundleLookup.OP_CODE, PropertyBundleLookup.read);
         m.set(ClickModifier.OP_CODE, ClickModifier.read);
         m.set(MultiClickModifier.OP_CODE, MultiClickModifier.read);
         m.set(DimensionConstraintsModifier.OP_CODE, DimensionConstraintsModifier.read);

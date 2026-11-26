@@ -7,6 +7,7 @@ import type { RemoteContext } from '../../RemoteContext';
 
 export class LayoutComponentContent extends Component {
     static readonly OP_CODE = 201;
+    override readonly isContentWrapper = true;
 
     constructor(componentId: number) {
         super(componentId);

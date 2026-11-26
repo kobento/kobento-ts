@@ -6,6 +6,7 @@ import type { WireBuffer } from '../../WireBuffer';
 import type { RemoteContext } from '../../RemoteContext';
 
 export class CanvasContent extends Component {
+    override readonly isContentWrapper = true;
     static readonly OP_CODE = 207;
 
     constructor(componentId: number) {

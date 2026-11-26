@@ -738,7 +738,8 @@ export class CoreText extends LayoutManager implements VariableSupport {
                 }
             },
             intArrayValue(id: number, values: number[]) {
-                if (id === P_FONT_AXIS) fontAxis = values;
+                // Each axis is a text id (its tag): resolved inside a pattern (androidx b7682af3f82).
+                if (id === P_FONT_AXIS) fontAxis = values.map(rid);
             },
             floatArrayValue(id: number, values: number[]) {
                 if (id === P_FONT_AXIS_VALUES) fontAxisValues = values;

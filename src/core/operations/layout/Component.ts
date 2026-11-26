@@ -13,6 +13,7 @@ import { TouchExpression } from '../TouchExpression';
 import { ComponentMeasure } from './measure/ComponentMeasure';
 import { AnimationSpec, ANIMATION } from './animation/AnimationSpec';
 import { AnimateMeasure } from './animation/AnimateMeasure';
+import { PropertyBundleModifier, PropertyBundleLookup } from './PropertyBundle';
 
 export class Visibility {
     // Matches Java Component.Visibility encoding
@@ -102,6 +103,12 @@ export class Component extends PaintOperation implements Container {
     setAnimationId(id: number): void { this.mAnimationId = id; }
 
     getParent(): Component | null { return this.mParent; }
+
+    /** The MODIFIER_PROPERTY_BUNDLE attached to this component (inflate), for lookups. */
+    mPropertyBundle: PropertyBundleModifier | null = null;
+    getPropertyBundle(): PropertyBundleModifier | null { return this.mPropertyBundle; }
+    /** LayoutComponentContent and CanvasContent: a lookup there reads its parent's bundle. */
+    readonly isContentWrapper: boolean = false;
     setParent(parent: Component): void { this.mParent = parent; }
     getList(): Operation[] { return this.mChildren; }
 
@@ -163,8 +170,14 @@ export class Component extends PaintOperation implements Container {
     }
 
     inflate(): void {
+        this.mPropertyBundle = null;
         // Set parent references for child components & extract AnimationSpec
         for (const op of this.mChildren) {
+            // Component.inflate: our bundle, and a lookup naming no component (-1) is ours.
+            if (op instanceof PropertyBundleModifier) this.mPropertyBundle = op;
+            if (op instanceof PropertyBundleLookup && op.getComponentId() === PropertyBundleLookup.SELF) {
+                op.setComponentId(this.getComponentId());
+            }
             if (op instanceof AnimationSpec) {
                 this.mAnimationSpec = op;
                 this.mAnimationId = op.getAnimationId();

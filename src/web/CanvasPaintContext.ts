@@ -357,6 +357,29 @@ export class CanvasPaintContext extends PaintContext {
             if (encoding === 3) this.emptyBitmapSizes.set(imageId, { width, height });
             return;
         }
+        // Raw pixels, inline (RemoteBitmapDecoder): TYPE_RAW8888 (3) is ARGB, a byte each, big
+        // endian; TYPE_RAW8 (2) is a grey level per pixel, opaque. They are not an image file,
+        // so they are copied into a canvas rather than decoded by the browser.
+        if (encoding === 0 && (type === 3 || type === 2) && width > 0 && height > 0) {
+            const n = width * height;
+            if (bitmap.length >= n * (type === 3 ? 4 : 1)) {
+                const c = this.createLayerCanvas(width, height);
+                const pixels = c.createImageData(width, height);
+                const d = pixels.data;
+                for (let i = 0; i < n; i++) {
+                    const o = i * 4;
+                    if (type === 3) {
+                        d[o] = bitmap[o + 1]; d[o + 1] = bitmap[o + 2]; d[o + 2] = bitmap[o + 3]; d[o + 3] = bitmap[o];
+                    } else {
+                        d[o] = d[o + 1] = d[o + 2] = bitmap[i]; d[o + 3] = 255;
+                    }
+                }
+                c.putImageData(pixels, 0, 0);
+                this.bitmapCache.set(imageId, c.canvas as any);   // drawImage takes a canvas too
+            }
+            this.bitmapPromises.set(imageId, Promise.resolve());
+            return;
+        }
         // A GIF: an <img> would draw its first frame forever, so its frames are decoded
         // separately where the browser can (WebCodecs' ImageDecoder), and the <img> below
         // stays as the still to show until they are, or on a browser that cannot.

@@ -273,7 +273,9 @@ export function filtered(text: string, op: TextInputLayout): string {
         case T.FILTER_DIGITS: out = out.replace(/[^0-9]/g, ''); break;
         case T.FILTER_DECIMAL: out = out.replace(/[^0-9.,-]/g, ''); break;
         case T.FILTER_HEXADECIMAL: out = out.replace(/[^0-9a-fA-F]/g, ''); break;
-        case T.FILTER_ALPHANUMERIC: out = out.replace(/[^\p{L}\p{N}]/gu, ''); break;
+        // Character.isLetterOrDigit (AndroidTextInputSupport): letters and decimal digits only, not
+        // every number (no ½, no Ⅻ).
+        case T.FILTER_ALPHANUMERIC: out = out.replace(/[^\p{L}\p{Nd}]/gu, ''); break;
     }
     if (op.hasInputFlag(T.FLAG_SINGLE_LINE) || op.isPassword()) out = out.replace(/[\r\n]+/g, ' ');
     if (op.getMaxLength() > 0 && out.length > op.getMaxLength()) out = out.slice(0, op.getMaxLength());

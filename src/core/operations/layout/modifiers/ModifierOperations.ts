@@ -542,6 +542,31 @@ export class ClipRectModifier extends Operation {
     }
 }
 
+// ── MODIFIER_CLIP_PATH (109, experimental): INT pathId ─────────────────
+/**
+ * ClipPathModifierOperation (androidx a34763e67a6): what follows it (later modifiers, the
+ * content) is clipped to a path. The path is in the coordinates it is painted in, the content
+ * box after the padding before it, like a canvas's drawing, and is not scaled by density.
+ */
+export class ClipPathModifier extends Operation {
+    static readonly OP_CODE = 109;
+    /** ClipPath.INTERSECT (PATH_CLIP_INTERSECT). */
+    private static readonly INTERSECT = 2;
+    readonly mPathId: number;
+    constructor(pathId: number) { super(); this.mPathId = pathId; }
+    setComponent(_c: any): void { /* nothing: the path carries its own geometry */ }
+    layoutDecorator(_w: number, _h: number): void { /* as ClipPathModifierOperation.layout */ }
+    write(_buffer: WireBuffer): void { /* stub */ }
+    apply(context: RemoteContext): void {
+        if (context.mMode !== ContextMode.PAINT) return;
+        context.getPaintContext()?.clipPath(this.mPathId, ClipPathModifier.INTERSECT);
+    }
+    deepToString(indent: string): string { return `${indent}ClipPathModifier(${this.mPathId})`; }
+    static read(buffer: WireBuffer, operations: Operation[]): void {
+        operations.push(new ClipPathModifier(buffer.readId()));
+    }
+}
+
 /**
  * The press ripple Java's ClickModifierOperation, MultiClickModifier and RippleModifierOperation
  * paint (animateRipple + paint): from the touch point a circle grows to the component's larger
