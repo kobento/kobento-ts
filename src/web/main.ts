@@ -31,6 +31,8 @@ export class RcdPlayer {
     private animationFrameId: number | null = null;
     private startTime = 0;
     private onLoad: ((doc: CoreDocument) => void) | null = null;
+    /** True while onLoad runs: the first frame follows it, so repaint() does not paint. */
+    private inOnLoad = false;
 
     // Theme override: 'light' | 'dark' | 'auto' (default)
     private themeOverride: 'light' | 'dark' | 'auto' = 'auto';
@@ -387,7 +389,17 @@ export class RcdPlayer {
         // Wait a tick for bitmap decoding
         await new Promise(resolve => setTimeout(resolve, 50));
 
-        if (this.onLoad) this.onLoad(doc);
+        if (this.onLoad) {
+            // While the host sets its values here, repaint() waits: a frame painted from inside
+            // onLoad would lay the document out before the rest of them are in.
+            this.inOnLoad = true;
+            try { this.onLoad(doc); } finally { this.inOnLoad = false; }
+            // What the host set in onLoad (shared values, texts) is in the first layout: without
+            // this the first frame lays out the defaults and the next one animates to the values.
+            this.remoteContext.setMode(ContextMode.DATA);
+            doc.updateDirtyVariables(this.remoteContext);
+            this.remoteContext.setMode(ContextMode.UNSET);
+        }
 
         // Start rendering
         this.startTime = performance.now();
@@ -504,6 +516,7 @@ export class RcdPlayer {
     }
 
     repaint(): void {
+        if (this.inOnLoad) return;   // the load paints the first frame once onLoad returns
         this.settleFrames = RcdPlayer.SETTLE_FRAMES;
         if (this.animationFrameId !== null) {
             cancelAnimationFrame(this.animationFrameId);

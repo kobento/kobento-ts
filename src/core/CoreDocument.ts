@@ -520,6 +520,27 @@ export class CoreDocument implements ExpansionDocument {
         }
     }
 
+    /**
+     * CoreDocument.updateVariables: every dirty variable-dependent operation, in containers too
+     * (the layout tree's texts and expressions), updated and applied. paint() only updates the
+     * top-level ones before laying out, as Java does with UPDATE_VARIABLES_BEFORE_LAYOUT off, so a
+     * value a host sets right after loading would reach a component's text only after its first
+     * layout, and the second layout would animate it. A player runs this once the host has set
+     * its values, before the first frame. An event modifier's actions are not entered: ours act
+     * in apply(), as applyOperations notes.
+     */
+    updateDirtyVariables(context: RemoteContext, ops: Operation[] = this.mOperations): void {
+        for (const op of ops) {
+            if (op.isDirty() && typeof (op as any).updateVariables === 'function') {
+                op.markNotDirty();
+                (op as any).updateVariables(context);
+                op.apply(context);
+            }
+            if (CoreDocument.isEventModifier(op)) continue;
+            if (this.isContainer(op)) this.updateDirtyVariables(context, (op as any).getList());
+        }
+    }
+
     private isContainer(op: Operation): boolean {
         return typeof (op as any).getList === 'function' && !(op instanceof ContainerEnd);
     }
