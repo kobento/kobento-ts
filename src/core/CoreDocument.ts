@@ -709,8 +709,10 @@ export class CoreDocument implements ExpansionDocument {
 
         // Run layout pass if needed (a document invalidation from here on asks for one more frame)
         this.mRelayoutRequested = false;
+        let laidOut = false;
         if (this.mRootLayoutComponent && this.mRootLayoutComponent.needsMeasure()) {
             this.mRootLayoutComponent.layoutTree(context);
+            laidOut = true;
         }
 
         if (this.mRootLayoutComponent && this.mRootLayoutComponent.needsBoundsAnimation()) {
@@ -821,6 +823,13 @@ export class CoreDocument implements ExpansionDocument {
         // Check if we need repaint
         const pc2 = context.getPaintContext();
         if ((pc2 && pc2.doesNeedsRepaint()) || (this.mRootLayoutComponent && (this.mRootLayoutComponent.needsRepaint() || this.mRootLayoutComponent.needsBoundsAnimation()))) {
+            this.mNeedsRepaintFlag = 1;
+        } else if (laidOut) {
+            // A frame that laid the tree out paints one more: what layout wrote (compute blocks
+            // recording positions in lists, component values) reaches what this frame already
+            // painted from it only then. Without it, a document resized between frames (a
+            // panel dragged) kept a canvas drawn from the earlier layout over the new one,
+            // until something else asked for a frame.
             this.mNeedsRepaintFlag = 1;
         } else if (this.mRelayoutRequested && this.mRootLayoutComponent && this.mRootLayoutComponent.needsMeasure()) {
             // A layout input changed during this frame's layout (a size bound to a value the
