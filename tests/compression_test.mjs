@@ -23,6 +23,22 @@ assert.ok(packed.length < plain.length);
 assert.ok(same(decompressDocument(packed), plain), "decompresses to the uncompressed original");
 assert.equal(decompressDocument(plain), plain, "an uncompressed document is passed through");
 
+// The same stream behind Header.COMPRESSED_STREAM_MARKER (0x77), as Header.compressDocument writes
+// it since the 3D change (4256202): the marker is skipped. (The fixture predates the marker, which
+// readers also take.)
+const headerEnd = (b) => {
+    const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+    let at = 17;
+    for (let i = 0, n = dv.getInt32(13); i < n; i++) at += 4 + dv.getUint16(at + 2);
+    return at;
+};
+const end = headerEnd(packed);
+assert.equal(packed[end], 0x78, "the fixture: the zlib stream right after the header");
+const marked = new Uint8Array(packed.length + 1);
+marked.set(packed.subarray(0, end), 0); marked[end] = 0x77; marked.set(packed.subarray(end), end + 1);
+assert.ok(same(decompressDocument(marked), plain), "a stream after the marker decompresses to the original");
+if (process.env.WRITE_FIXTURE) (await import("node:fs")).writeFileSync(process.env.WRITE_FIXTURE, marked);
+
 // The player loads it: same operations as the original.
 const ops = (bytes) => {
     const doc = new CoreDocument();

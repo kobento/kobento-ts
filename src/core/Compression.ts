@@ -13,6 +13,8 @@
 export const COMPRESS = 31;
 export const COMPRESSION_NONE = 0;
 export const COMPRESSION_DEFLATE = 1;
+/** Header.COMPRESSED_STREAM_MARKER: the byte before the zlib stream (androidx 3D change, 4256202). */
+export const COMPRESSED_STREAM_MARKER = 0x77;
 /** Limits.MAX_DECOMPRESSED_SIZE. */
 export const MAX_DECOMPRESSED_SIZE = 32 * 1024 * 1024;
 
@@ -66,7 +68,11 @@ export function decompressDocument(bytes: Uint8Array): Uint8Array {
         if ((tag & 0x3f) !== COMPRESS) { for (let j = at; j < end; j++) props.push(bytes[j]); kept++; }
         at = end;
     }
-    const body = inflateZlib(bytes.subarray(h.end), MAX_DECOMPRESSED_SIZE);
+    // Header.COMPRESSED_STREAM_MARKER (0x77) may start the data, before the zlib stream: a
+    // reserved opcode, so a player without compression stops on it. Streams written before the
+    // marker existed start right after the header.
+    const start = h.end < bytes.length && bytes[h.end] === COMPRESSED_STREAM_MARKER ? h.end + 1 : h.end;
+    const body = inflateZlib(bytes.subarray(start), MAX_DECOMPRESSED_SIZE);
     const out = new Uint8Array(head.length + 4 + props.length + body.length);
     out.set(head, 0);
     out.set([(kept >>> 24) & 255, (kept >>> 16) & 255, (kept >>> 8) & 255, kept & 255], head.length);

@@ -22,6 +22,13 @@ import { build as buildPrimitive, MeshData } from '../../d3/Primitive3D';
 
 /** Guards against a malformed or hostile document allocating unbounded buffers. */
 const MAX_INDICES = 600_000;
+
+/** Advanced3D.check: bit 30 of a mesh id, a draw mode or a texture id marks the advanced form of
+ *  a later 3D format version, which readers of this one refuse. */
+const ADVANCED_BIT = 1 << 30;
+function checkAdvanced(field: number, op: string): void {
+    if ((field & ADVANCED_BIT) !== 0) throw new Error(`${op}: advanced form (bit 30) is not supported by this player`);
+}
 const MAX_VERTS_FLOATS = 3 * 200_000;
 const MAX_LIGHTS = 32;
 const MAX_CHANNELS = 8;
@@ -142,6 +149,7 @@ export class DefineMesh3D extends PaintOperation {
     /** `id, len+indices[], len+verts[], len+normals[], len+uv[]` (0 length = absent). */
     static read(buffer: WireBuffer, operations: Operation[]): void {
         const id = buffer.readInt();
+        checkAdvanced(id, 'DefineMesh3D');
         const idxLen = buffer.readInt();
         if (idxLen < 0 || idxLen > MAX_INDICES || (idxLen % 3) !== 0) {
             throw new Error(`DefineMesh3D: bad indices length ${idxLen}`);
@@ -322,7 +330,9 @@ export class DrawMesh3D extends PaintOperation {
 
     /** `meshId, mode`. Mode is `(backend << 1) | smoothBit`, plus wireframe flags. */
     static read(buffer: WireBuffer, operations: Operation[]): void {
-        operations.push(new DrawMesh3D(buffer.readInt(), buffer.readInt()));
+        const meshId = buffer.readInt(), mode = buffer.readInt();
+        checkAdvanced(mode, 'DrawMesh3D');
+        operations.push(new DrawMesh3D(meshId, mode));
     }
 }
 
@@ -484,7 +494,9 @@ export class SetTexture3D extends PaintOperation {
 
     /** `bitmapId`. */
     static read(buffer: WireBuffer, operations: Operation[]): void {
-        operations.push(new SetTexture3D(buffer.readInt()));
+        const bitmapId = buffer.readInt();
+        checkAdvanced(bitmapId, 'SetTexture3D');
+        operations.push(new SetTexture3D(bitmapId));
     }
 }
 
