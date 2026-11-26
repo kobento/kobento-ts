@@ -201,6 +201,7 @@ export class CoreDocument implements ExpansionDocument {
      * size laid itself out for a 256-pixel world while being drawn much larger.
      */
     setWidth(w: number): void {
+        if (w !== this.mWidth) this.mResizeFrames = CoreDocument.RESIZE_FRAMES;
         this.mWidth = w;
         this.mRemoteComposeState?.setWindowWidth(w);
     }
@@ -215,6 +216,7 @@ export class CoreDocument implements ExpansionDocument {
 
     /** Set the document height and the `windowHeight()` system variable — see setWidth. */
     setHeight(h: number): void {
+        if (h !== this.mHeight) this.mResizeFrames = CoreDocument.RESIZE_FRAMES;
         this.mHeight = h;
         this.mRemoteComposeState?.setWindowHeight(h);
     }
@@ -266,6 +268,15 @@ export class CoreDocument implements ExpansionDocument {
      * measures, a text re-measuring) do not count: they settle within the pass.
      */
     private mRelayoutRequested = false;
+    // After the host resizes the document, frames keep coming while layout keeps running (at
+    // most this many): what a layout pass writes (compute blocks recording positions in lists,
+    // component values) reaches what that frame already painted only on a later one, and a
+    // graph converges over several passes. Without them, a document resized twice between
+    // frames (a panel dragged) kept a canvas drawn from the earlier layout over the new one.
+    // Only a resize arms them: a document that lays itself out again on every frame would
+    // otherwise never go idle.
+    private static readonly RESIZE_FRAMES = 60;
+    private mResizeFrames = 0;
 
     getOperations(): Operation[] { return this.mOperations; }
     getOpsPerFrame(): number { return this.mLastOpCount; }
@@ -713,6 +724,8 @@ export class CoreDocument implements ExpansionDocument {
         if (this.mRootLayoutComponent && this.mRootLayoutComponent.needsMeasure()) {
             this.mRootLayoutComponent.layoutTree(context);
             laidOut = true;
+        } else {
+            this.mResizeFrames = 0;   // settled
         }
 
         if (this.mRootLayoutComponent && this.mRootLayoutComponent.needsBoundsAnimation()) {
@@ -824,12 +837,8 @@ export class CoreDocument implements ExpansionDocument {
         const pc2 = context.getPaintContext();
         if ((pc2 && pc2.doesNeedsRepaint()) || (this.mRootLayoutComponent && (this.mRootLayoutComponent.needsRepaint() || this.mRootLayoutComponent.needsBoundsAnimation()))) {
             this.mNeedsRepaintFlag = 1;
-        } else if (laidOut) {
-            // A frame that laid the tree out paints one more: what layout wrote (compute blocks
-            // recording positions in lists, component values) reaches what this frame already
-            // painted from it only then. Without it, a document resized between frames (a
-            // panel dragged) kept a canvas drawn from the earlier layout over the new one,
-            // until something else asked for a frame.
+        } else if (laidOut && this.mResizeFrames > 0) {
+            this.mResizeFrames--;
             this.mNeedsRepaintFlag = 1;
         } else if (this.mRelayoutRequested && this.mRootLayoutComponent && this.mRootLayoutComponent.needsMeasure()) {
             // A layout input changed during this frame's layout (a size bound to a value the
